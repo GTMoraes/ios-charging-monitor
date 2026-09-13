@@ -66,6 +66,15 @@ struct ContentView: View {
                 Text(snap.statusText)
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(statusColor(snap))
+                if monitor.isThrottling {
+                    Label("Throttling · thermal state \(thermalName(monitor.thermalState))", systemImage: "thermometer.high")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.red)
+                } else if let t = snap.batteryTemperatureC, t >= Self.batteryHotC {
+                    Label(String(format: "Battery hot · %.1f °C", t), systemImage: "thermometer.high")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.red)
+                }
 
                 if let primary = snap.primaryWatts {
                     bigNumber(watts(primary.value, signed: true))
@@ -247,20 +256,34 @@ struct ContentView: View {
 
     // MARK: Thermals
 
+    /// Li-ion ages fastest charging hot; iOS slows charging around 40 °C and pauses near 45 °C.
+    private static let batteryWarmC = 38.0
+    private static let batteryHotC = 42.0
+
     @ViewBuilder
     private func thermalSection(_ snap: PowerSnapshot) -> some View {
-        let rows: [(String, Double?)] = [
-            ("Battery", snap.batteryTemperatureC),
-            ("Charger junction", snap.chargerJunctionTemperatureC),
-            ("Charger die", snap.chargerDieTemperatureC),
-            ("SoC (hottest die)", snap.socMaxTemperatureC),
-        ]
-        if rows.contains(where: { $0.1 != nil }) {
+        let throttling = monitor.isThrottling
+        if snap.batteryTemperatureC != nil || snap.chargerJunctionTemperatureC != nil || snap.socMaxTemperatureC != nil {
             Section("Thermals") {
-                ForEach(rows, id: \.0) { label, value in
-                    row(label, value.map { Formatting.temperature($0) })
-                }
+                row("Thermal state", thermalName(monitor.thermalState).capitalized + (throttling ? " · throttling" : ""),
+                    color: throttling ? .red : (monitor.thermalState == .fair ? .orange : nil))
+                row("Battery", snap.batteryTemperatureC.map { Formatting.temperature($0) },
+                    color: snap.batteryTemperatureC.map { $0 >= Self.batteryHotC ? .red : ($0 >= Self.batteryWarmC ? .orange : nil) } ?? nil)
+                row("Charger junction", snap.chargerJunctionTemperatureC.map { Formatting.temperature($0) },
+                    color: throttling ? .red : nil)
+                row("SoC (hottest die)", snap.socMaxTemperatureC.map { Formatting.temperature($0) },
+                    color: throttling ? .red : nil)
             }
+        }
+    }
+
+    private func thermalName(_ state: ProcessInfo.ThermalState) -> String {
+        switch state {
+        case .nominal: return "nominal"
+        case .fair: return "fair"
+        case .serious: return "serious"
+        case .critical: return "critical"
+        @unknown default: return "unknown"
         }
     }
 
@@ -355,13 +378,16 @@ struct ContentView: View {
 
     // MARK: Small views
 
-    private func row(_ label: String, _ value: String?) -> some View {
+    private func row(_ label: String, _ value: String?, color: Color? = nil) -> some View {
         Group {
             if let value {
                 HStack {
                     Text(label)
                     Spacer()
-                    Text(value).foregroundStyle(.secondary).monospacedDigit()
+                    Text(value)
+                        .foregroundStyle(color.map { AnyShapeStyle($0) } ?? AnyShapeStyle(.secondary))
+                        .fontWeight(color == nil ? .regular : .semibold)
+                        .monospacedDigit()
                 }
                 .font(.callout)
                 .listRowInsets(EdgeInsets(top: 5, leading: 16, bottom: 5, trailing: 16))

@@ -25,6 +25,10 @@ final class PowerMonitor: ObservableObject {
         var end: Date?
     }
 
+    /// iOS's own thermal verdict; `.serious` and `.critical` mean the system is throttling.
+    @Published private(set) var thermalState: ProcessInfo.ThermalState = ProcessInfo.processInfo.thermalState
+    var isThrottling: Bool { thermalState == .serious || thermalState == .critical }
+
     /// Highest charger input power seen since the last reset, persisted across launches.
     @Published private(set) var peak: PeakRecord?
     /// Highest charger input power since the last plug-in.
@@ -135,6 +139,8 @@ final class PowerMonitor: ObservableObject {
         updateEstimate(snap)
         updateHold(snap)
         updatePeak(snap)
+        let state = ProcessInfo.processInfo.thermalState
+        if state != thermalState { thermalState = state }
         let notifyState = SmartChargeNotificationState()
         if notifyState != smartChargeNotifyState {
             #if DEBUG

@@ -121,7 +121,10 @@ struct PowerSnapshot {
         guard let i = sensorBatteryCurrent, let v = sensorBatteryVoltage else { return nil }
         return i * v
     }
-    var sensorBatteryTemperatureC: Double? { sensor("gas gauge battery") }
+    /// Hottest of the battery gas-gauge sensors (there are several; one runs warmer).
+    var sensorBatteryTemperatureC: Double? {
+        sensors.filter { $0.usage == 5 && $0.name == "gas gauge battery" }.map(\.value).max()
+    }
     var chargerJunctionTemperatureC: Double? { sensor("Charger TQ0j") }
     var chargerDieTemperatureC: Double? { sensor("Charger TQ0d") }
     /// Hottest SoC die sensor (`PMU tdie1…n`).
