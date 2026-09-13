@@ -143,29 +143,23 @@ struct ContentView: View {
                         .multilineTextAlignment(.center)
                 }
 
-                HStack(spacing: 8) {
-                    if let peak = monitor.peak {
+                if let peak = monitor.peak {
+                    HStack(spacing: 8) {
                         Text("Peak \(watts(peak.watts))")
                             .font(.footnote.weight(.semibold))
                             .monospacedDigit()
-                    } else {
-                        Text("Peak —")
-                            .font(.footnote.weight(.semibold))
-                            .foregroundStyle(.secondary)
+                        Button("Reset") { monitor.resetPeak() }
+                            .font(.caption2)
+                            .buttonStyle(.bordered)
+                            .controlSize(.mini)
                     }
-                    Button("Reset") { monitor.resetPeak() }
+                    .padding(.top, 4)
+                    Text([peak.label, peak.adapter, peak.date.formatted(date: .abbreviated, time: .shortened)]
+                            .compactMap { $0 }.joined(separator: " · ") + " · resets on each charge")
                         .font(.caption2)
-                        .buttonStyle(.bordered)
-                        .controlSize(.mini)
-                        .disabled(monitor.peak == nil)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
                 }
-                .padding(.top, 4)
-                Text(monitor.peak.map { peak in
-                        [peak.label, peak.adapter, peak.date.formatted(date: .abbreviated, time: .shortened)]
-                            .compactMap { $0 }.joined(separator: " · ")
-                     } ?? "resets at each plug-in")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 2)
