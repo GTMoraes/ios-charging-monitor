@@ -132,8 +132,8 @@ struct ContentView: View {
                         .multilineTextAlignment(.center)
                 }
 
-                if let peak = monitor.peak {
-                    HStack(spacing: 8) {
+                HStack(spacing: 8) {
+                    if let peak = monitor.peak {
                         Text("Peak \(watts(peak.watts))")
                             .font(.footnote.weight(.semibold))
                             .monospacedDigit()
@@ -143,17 +143,24 @@ struct ContentView: View {
                                 .foregroundStyle(.secondary)
                                 .monospacedDigit()
                         }
-                        Button("Reset") { monitor.resetPeak() }
-                            .font(.caption2)
-                            .buttonStyle(.bordered)
-                            .controlSize(.mini)
+                    } else {
+                        Text("Peak —")
+                            .font(.footnote.weight(.semibold))
+                            .foregroundStyle(.secondary)
                     }
-                    .padding(.top, 4)
-                    Text([peak.adapter, peak.date.formatted(date: .abbreviated, time: .shortened)]
-                            .compactMap { $0 }.joined(separator: " · "))
+                    Button("Reset") { monitor.resetPeak() }
                         .font(.caption2)
-                        .foregroundStyle(.secondary)
+                        .buttonStyle(.bordered)
+                        .controlSize(.mini)
+                        .disabled(monitor.peak == nil)
                 }
+                .padding(.top, 4)
+                Text(monitor.peak.map { peak in
+                        [peak.adapter, peak.date.formatted(date: .abbreviated, time: .shortened)]
+                            .compactMap { $0 }.joined(separator: " · ")
+                     } ?? "recorded while charging")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 2)
