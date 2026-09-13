@@ -4,13 +4,15 @@ ChargeSpeed: live charging power on an iPhone, read from the phone's PMU and cha
 private APIs. Build it yourself, install on your own phone. Cannot ship on the App Store because of the private
 APIs it uses (see below).
 
-<img src="docs/screenshot.png" width="360" alt="ChargeSpeed showing 20.39 W from a USB-C charger, 18.33 W into the battery, 14.31 V at 1.43 A, 50% charged, adapter negotiated 15 V × 3 A, battery and charger temperatures">
+<img src="docs/screenshot.png" width="360" alt="ChargeSpeed showing 27.86 W from a USB-C charger, 25.92 W into the battery, 14.20 V at 1.96 A, 55% charged, session peak 31.70 W, adapter negotiated 15 V × 3 A, thermal state nominal with battery, charger, and SoC temperatures">
 
 ## Why
 
 To compare chargers and cables. iOS shows a lightning bolt and nothing else. Seeing the wattage
 exposed a few bad charging setups I'd been using. It also shows what a wireless charger actually
 negotiates (for example MagSafe 15 W versus Qi 7.5 W) and what reaches the battery.
+And it finds the sweet spot on a wireless charger with no magnets, like a car tray: slide the phone
+around with the live watts on screen until the number peaks.
 
 ## What it shows (verified on iPhone 17 Pro Max, iOS 26)
 
@@ -38,9 +40,14 @@ Details in [CLAUDE.md](CLAUDE.md).
 
 ## Versus App Store "charging speed" apps
 
-They estimate from the percent climb times rated capacity: minutes of delay, battery side only,
-wrong under throttling or holds. This reads the sensors. The same estimate is kept as a fallback
-("% rate"). Private APIs are why this can't be published: Guideline 2.5.1, and TestFlight scans too.
+There are apps on the App Store that claim to show charging wattage. They can't read the sensors,
+because Apple doesn't expose them to third-party apps, so they guess: watch the battery percentage
+tick up, multiply by the battery's rated capacity, divide by time. That's close enough on a good
+day, minutes behind at best, and wrong whenever the phone throttles or pauses charging. I wanted
+the real number.
+
+This reads the sensors. The same estimate is kept as a fallback ("% rate"). Private APIs are why
+this can't be published: Guideline 2.5.1, and TestFlight scans too.
 
 ## IPA
 

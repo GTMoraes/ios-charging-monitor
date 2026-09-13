@@ -285,6 +285,7 @@ final class PowerMonitor: ObservableObject {
             if isNew {
                 peak = nil
                 recentSamples.removeAll()
+                history.removeAll()
                 UserDefaults.standard.removeObject(forKey: Self.peakKey)
                 session = ChargingSession(start: snap.date, adapterIdentity: adapterIdentity(snap),
                                           lastSeenPluggedIn: true, lastSeenPercent: snap.percent)
