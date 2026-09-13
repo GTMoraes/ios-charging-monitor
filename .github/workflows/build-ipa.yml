@@ -1,0 +1,148 @@
+name: Build unsigned IPA
+
+# Compila o ChargeSpeed num macOS alugado do GitHub e publica o .ipa
+# sem assinatura num Release. Quem assina e instala e o AltStore, no iPhone.
+
+on:
+  workflow_dispatch:
+    inputs:
+      battery_wh:
+        description: "Energia util da bateria em Wh (iPhone 17 = 14.3 | 17 Pro = 16.5 | 17 Pro Max = 19.7 | Air = 12.2)"
+        required: true
+        default: "14.3"
+      bundle_id:
+        description: "Bundle identifier do app"
+        required: true
+        default: "com.gtm.chargespeed"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-26
+    timeout-minutes: 30
+
+    steps:
+      - name: Baixar o codigo
+        uses: actions/checkout@v4
+
+      - name: Selecionar o Xcode mais recente da maquina
+        run: |
+          set -euo pipefail
+          ls -d /Applications/Xcode*.app
+          XC="$(ls -d /Applications/Xcode*.app | sort -V | tail -1)"
+          echo "Usando $XC"
+          sudo xcode-select -s "$XC"
+          xcodebuild -version
+
+      - name: Instalar o XcodeGen
+        run: brew install xcodegen
+
+      - name: Ajustar project.yml (tirar o time do dono do repo)
+        env:
+          BUNDLE_ID: ${{ inputs.bundle_id }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import os, re, pathlib, sys
+          bid = os.environ["BUNDLE_ID"].strip()
+          if not re.fullmatch(r"[A-Za-z0-9.\-]+", bid):
+              sys.exit("bundle_id invalido")
+          p = pathlib.Path("project.yml")
+          s = p.read_text()
+          # O time do autor original nao existe na sua conta: fora.
+          s = re.sub(r"^\s*DEVELOPMENT_TEAM:.*\n", "", s, flags=re.M)
+          s = re.sub(r"CODE_SIGN_STYLE:\s*Automatic", "CODE_SIGN_STYLE: Manual", s)
+          s, n = re.subn(r"PRODUCT_BUNDLE_IDENTIFIER:\s*\S+", f"PRODUCT_BUNDLE_IDENTIFIER: {bid}", s)
+          if n != 1:
+              sys.exit("PRODUCT_BUNDLE_IDENTIFIER nao encontrado - o upstream mudou")
+          p.write_text(s)
+          print(s)
+          PY
+
+      - name: Ajustar a capacidade da bateria para o seu modelo
+        env:
+          BATTERY_WH: ${{ inputs.battery_wh }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import os, re, pathlib, sys
+          wh = os.environ["BATTERY_WH"].strip()
+          try:
+              v = float(wh)
+              assert 5.0 < v < 40.0
+          except Exception:
+              sys.exit(f"battery_wh invalido: {wh!r}")
+          p = pathlib.Path("ChargeSpeed/PowerMonitor.swift")
+          s = p.read_text()
+          s, n = re.subn(r"(let\s+batteryWattHours:\s*Double\s*=\s*)[0-9.]+", r"\g<1>" + wh, s)
+          if n != 1:
+              sys.exit("batteryWattHours nao encontrado - o upstream mudou")
+          p.write_text(s)
+          print(f"batteryWattHours = {wh}")
+          PY
+
+      - name: Gerar o .xcodeproj
+        run: xcodegen generate
+
+      - name: Compilar sem assinatura
+        run: |
+          set -euo pipefail
+          xcodebuild \
+            -project ChargeSpeed.xcodeproj \
+            -scheme ChargeSpeed \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            build 2>&1 | tee build.log | tail -40
+
+      - name: Empacotar o .ipa
+        run: |
+          set -euo pipefail
+          APP="build/Build/Products/Release-iphoneos/ChargeSpeed.app"
+          test -d "$APP" || { echo "App nao foi gerado"; exit 1; }
+          rm -rf Payload ChargeSpeed-unsigned.ipa
+          mkdir Payload
+          cp -R "$APP" Payload/
+          rm -rf Payload/ChargeSpeed.app/_CodeSignature
+          zip -qry ChargeSpeed-unsigned.ipa Payload
+          ls -lh ChargeSpeed-unsigned.ipa
+          unzip -l ChargeSpeed-unsigned.ipa | head -20
+
+      - name: Guardar o log em caso de erro
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: build.log
+          if-no-files-found: ignore
+
+      - name: Publicar o .ipa num Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG="ipa-$(date +%Y%m%d-%H%M%S)"
+          gh release create "$TAG" ChargeSpeed-unsigned.ipa \
+            --title "ChargeSpeed $TAG" \
+            --notes "IPA sem assinatura. Instale pelo AltStore, que assina com o seu Apple ID."
+          URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/ChargeSpeed-unsigned.ipa"
+          {
+            echo "## IPA pronto"
+            echo ""
+            echo "Link direto do arquivo:"
+            echo ""
+            echo "    $URL"
+            echo ""
+            echo "Abra este link no **Safari do iPhone** para baixar o .ipa,"
+            echo "ou cole no AltStore usando:"
+            echo ""
+            echo "    altstore://install?url=$URL"
+            echo ""
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "$URL"
