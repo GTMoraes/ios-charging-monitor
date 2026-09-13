@@ -4,7 +4,7 @@ ChargeSpeed: live charging power on an iPhone, read from the phone's PMU and cha
 private APIs. Build it yourself, install on your own phone. Cannot ship on the App Store because of the private
 APIs it uses (see below).
 
-<img src="docs/screenshot.png" width="360" alt="ChargeSpeed showing 20.39 W from a USB-C charger, 18.33 W into the battery, 14.31 V at 1.43 A, 50% charged, adapter negotiated 15 V × 3 A, battery and charger temperatures">
+<img src="docs/screenshot.png" width="360" alt="ChargeSpeed showing 27.86 W from a USB-C charger, 25.92 W into the battery, 14.20 V at 1.96 A, 55% charged, session peak 31.70 W, adapter negotiated 15 V × 3 A, thermal state nominal with battery, charger, and SoC temperatures">
 
 ## Why
 
