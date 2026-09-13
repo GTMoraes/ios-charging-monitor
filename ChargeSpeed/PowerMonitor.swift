@@ -38,7 +38,8 @@ final class PowerMonitor: ObservableObject {
         var label: String?
     }
 
-    private var previousInputWatts: Double?
+    /// Last two headline samples, for the median-of-three glitch filter.
+    private var recentSamples: [Double] = []
     private static let peakKey = "peakRecord"
 
     private var currentHold: HoldObservation?
@@ -89,7 +90,7 @@ final class PowerMonitor: ObservableObject {
     func resetPeak() {
         peak = nil
         sessionPeak = nil
-        previousInputWatts = nil
+        recentSamples.removeAll()
         UserDefaults.standard.removeObject(forKey: Self.peakKey)
     }
 
@@ -234,18 +235,18 @@ final class PowerMonitor: ObservableObject {
     }
 
     /// Records a new peak of the headline number (charger input on USB-C, battery input on
-    /// MagSafe where no input current sensor exists). Needs two consecutive samples above the
-    /// old peak and uses the lower of the pair so a single glitchy sample cannot set it.
+    /// MagSafe where no input current sensor exists). Uses the median of the last three samples
+    /// so a single glitchy reading cannot set it, while anything sustained for two seconds does.
     private func updatePeak(_ snap: PowerSnapshot) {
         guard snap.externalConnected, let primary = snap.primaryWatts, primary.value > 0 else {
-            previousInputWatts = nil
+            recentSamples.removeAll()
             if !snap.externalConnected { sessionPeak = nil }
             return
         }
-        let now = primary.value
-        defer { previousInputWatts = now }
-        guard let previous = previousInputWatts else { return }
-        let candidate = min(now, previous)
+        recentSamples.append(primary.value)
+        if recentSamples.count > 3 { recentSamples.removeFirst(recentSamples.count - 3) }
+        guard recentSamples.count == 3 else { return }
+        let candidate = recentSamples.sorted()[1]
         if candidate > (sessionPeak ?? 0) { sessionPeak = candidate }
         if candidate > (peak?.watts ?? 0) {
             peak = PeakRecord(watts: candidate, date: snap.date,
