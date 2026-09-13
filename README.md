@@ -38,9 +38,14 @@ Details in [CLAUDE.md](CLAUDE.md).
 
 ## Versus App Store "charging speed" apps
 
-They estimate from the percent climb times rated capacity: minutes of delay, battery side only,
-wrong under throttling or holds. This reads the sensors. The same estimate is kept as a fallback
-("% rate"). Private APIs are why this can't be published: Guideline 2.5.1, and TestFlight scans too.
+There are apps on the App Store that claim to show charging wattage. They can't read the sensors,
+because Apple doesn't expose them to third-party apps, so they guess: watch the battery percentage
+tick up, multiply by the battery's rated capacity, divide by time. That's close enough on a good
+day, minutes behind at best, and wrong whenever the phone throttles or pauses charging. I wanted
+the real number.
+
+This reads the sensors. The same estimate is kept as a fallback ("% rate"). Private APIs are why
+this can't be published: Guideline 2.5.1, and TestFlight scans too.
 
 ## IPA
 
