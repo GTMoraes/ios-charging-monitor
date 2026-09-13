@@ -131,6 +131,29 @@ struct ContentView: View {
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
                 }
+
+                if let peak = monitor.peak {
+                    HStack(spacing: 8) {
+                        Text("Peak \(watts(peak.watts))")
+                            .font(.footnote.weight(.semibold))
+                            .monospacedDigit()
+                        if let session = monitor.sessionPeak, snap.externalConnected {
+                            Text("· session \(watts(session))")
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                                .monospacedDigit()
+                        }
+                        Button("Reset") { monitor.resetPeak() }
+                            .font(.caption2)
+                            .buttonStyle(.bordered)
+                            .controlSize(.mini)
+                    }
+                    .padding(.top, 4)
+                    Text([peak.adapter, peak.date.formatted(date: .abbreviated, time: .shortened)]
+                            .compactMap { $0 }.joined(separator: " · "))
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 2)

@@ -25,6 +25,20 @@ final class PowerMonitor: ObservableObject {
         var end: Date?
     }
 
+    /// Highest charger input power seen since the last reset, persisted across launches.
+    @Published private(set) var peak: PeakRecord?
+    /// Highest charger input power since the last plug-in.
+    @Published private(set) var sessionPeak: Double?
+
+    struct PeakRecord: Codable {
+        let watts: Double
+        let date: Date
+        let adapter: String?
+    }
+
+    private var previousInputWatts: Double?
+    private static let peakKey = "peakRecord"
+
     private var currentHold: HoldObservation?
     private var holdCandidateSince: Date?
     private var lastExternalConnected: Bool?
@@ -64,6 +78,17 @@ final class PowerMonitor: ObservableObject {
                 lastHold = hold
             }
         }
+        if let data = UserDefaults.standard.data(forKey: Self.peakKey),
+           let record = try? JSONDecoder().decode(PeakRecord.self, from: data) {
+            peak = record
+        }
+    }
+
+    func resetPeak() {
+        peak = nil
+        sessionPeak = nil
+        previousInputWatts = nil
+        UserDefaults.standard.removeObject(forKey: Self.peakKey)
     }
 
     func start() {
@@ -106,6 +131,7 @@ final class PowerMonitor: ObservableObject {
         snapshot = snap
         updateEstimate(snap)
         updateHold(snap)
+        updatePeak(snap)
         let notifyState = SmartChargeNotificationState()
         if notifyState != smartChargeNotifyState {
             #if DEBUG
@@ -201,6 +227,26 @@ final class PowerMonitor: ObservableObject {
                 lastHold = currentHold
                 persistHold()
                 currentHold = nil
+            }
+        }
+    }
+
+    /// Records a new peak only when two consecutive samples both exceed the old one,
+    /// using the lower of the pair so a single glitchy sample cannot set it.
+    private func updatePeak(_ snap: PowerSnapshot) {
+        guard snap.externalConnected, let now = snap.chargerInputWatts, now > 0 else {
+            previousInputWatts = nil
+            if !snap.externalConnected { sessionPeak = nil }
+            return
+        }
+        defer { previousInputWatts = now }
+        guard let previous = previousInputWatts else { return }
+        let candidate = min(now, previous)
+        if candidate > (sessionPeak ?? 0) { sessionPeak = candidate }
+        if candidate > (peak?.watts ?? 0) {
+            peak = PeakRecord(watts: candidate, date: snap.date, adapter: snap.adapterName ?? snap.adapterDescription)
+            if let data = try? JSONEncoder().encode(peak) {
+                UserDefaults.standard.set(data, forKey: Self.peakKey)
             }
         }
     }
