@@ -100,7 +100,7 @@ struct ContentView: View {
                     if let v = snap.usbInputVoltage, let i = snap.usbInputCurrent, v > 0.5 {
                         stat("Input", String(format: "%.2f V · %.2f A", v, i))
                     } else if snap.isWirelessInput, let v = snap.wirelessInputVoltage {
-                        stat("MagSafe rail", String(format: "%.2f V", v))
+                        stat("Coil rail", String(format: "%.2f V", v))
                     }
                     if let load = snap.systemLoad_mW {
                         stat("System load", watts(Double(load) / 1000))
@@ -282,7 +282,7 @@ struct ContentView: View {
         if snap.adapter != nil {
             Section("Adapter") {
                 row("Name", snap.adapterName ?? snap.adapterDescription)
-                row("Negotiated", snap.adapterNegotiated.map {
+                row(snap.adapterIsWireless ? "Reported profile" : "Negotiated", snap.adapterNegotiated.map {
                     String(format: "%.1f V × %.2f A = %.0f W",
                            Double($0.voltage_mV) / 1000,
                            Double($0.current_mA) / 1000,

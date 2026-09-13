@@ -114,6 +114,9 @@ struct PowerSnapshot {
     var usbInputCurrent: Double? { sensor("Charger IQ0u") }
     var wirelessInputVoltage: Double? { sensor("Charger VQ1u") }
     var isWirelessInput: Bool { (wirelessInputVoltage ?? 0) > 1 && (usbInputVoltage ?? 0) < 1 }
+    /// iOS describes MagSafe pucks as "magsafe chg" and plain Qi pads as "baseline arcas".
+    var isMagSafe: Bool { (adapterDescription ?? adapterName ?? "").lowercased().contains("magsafe") }
+    var wirelessKind: String { isMagSafe ? "MagSafe" : "wireless" }
 
     var sensorBatteryCurrent: Double? { sensor("Charger IQ0B") }
     var sensorBatteryVoltage: Double? { sensor("Charger VQ0l") ?? sensor("PMU VP0u") }
@@ -152,7 +155,7 @@ struct PowerSnapshot {
             return (w, isWirelessInput ? "from charger (MagSafe)" : "from charger (USB-C)")
         }
         if let w = batteryWatts {
-            if externalConnected { return (w, isWirelessInput ? "into battery (MagSafe)" : "into battery") }
+            if externalConnected { return (w, isWirelessInput ? "into battery (\(wirelessKind))" : "into battery") }
             return (w, "from battery")
         }
         return nil
