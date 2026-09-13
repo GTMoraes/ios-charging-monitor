@@ -9,6 +9,9 @@ Personal dev-only iPhone app: live charge power in watts from private APIs. Not 
 - Deploy: `/deploy-to-iphone`. Console-attached launch (phone unlocked):
   `xcrun devicectl device process launch --console --terminate-existing --device <UDID> com.gregwilson.chargespeed`
 - Simulator runs but IOKit calls hit the Mac, so it shows the Mac's battery.
+- Release IPA: `.github/workflows/release.yml` builds an unsigned IPA on any `v*` tag and attaches it to a
+  GitHub release. To ship: bump `MARKETING_VERSION` in `project.yml`, `git tag vX.Y.Z && git push origin vX.Y.Z`.
+  Keep it unsigned; a signed IPA embeds the team, certificate, and registered device UDIDs.
 
 ## Code
 
