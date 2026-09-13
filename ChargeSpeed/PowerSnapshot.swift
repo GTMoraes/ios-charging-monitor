@@ -149,7 +149,8 @@ struct PowerSnapshot {
             return (w, isWirelessInput ? "from charger (MagSafe)" : "from charger (USB-C)")
         }
         if let w = batteryWatts {
-            return (w, externalConnected ? "into battery" : "from battery")
+            if externalConnected { return (w, isWirelessInput ? "into battery (MagSafe)" : "into battery") }
+            return (w, "from battery")
         }
         return nil
     }

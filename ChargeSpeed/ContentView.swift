@@ -90,6 +90,8 @@ struct ContentView: View {
                     }
                     if let v = snap.usbInputVoltage, let i = snap.usbInputCurrent, v > 0.5 {
                         stat("Input", String(format: "%.2f V · %.2f A", v, i))
+                    } else if snap.isWirelessInput, let v = snap.wirelessInputVoltage {
+                        stat("MagSafe rail", String(format: "%.2f V", v))
                     }
                     if let load = snap.systemLoad_mW {
                         stat("System load", watts(Double(load) / 1000))
@@ -156,7 +158,7 @@ struct ContentView: View {
                 }
                 .padding(.top, 4)
                 Text(monitor.peak.map { peak in
-                        [peak.adapter, peak.date.formatted(date: .abbreviated, time: .shortened)]
+                        [peak.label, peak.adapter, peak.date.formatted(date: .abbreviated, time: .shortened)]
                             .compactMap { $0 }.joined(separator: " · ")
                      } ?? "recorded while charging")
                     .font(.caption2)

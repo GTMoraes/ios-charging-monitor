@@ -34,6 +34,8 @@ final class PowerMonitor: ObservableObject {
         let watts: Double
         let date: Date
         let adapter: String?
+        /// Which measurement this was, e.g. "from charger (USB-C)" or "into battery (MagSafe)".
+        var label: String?
     }
 
     private var previousInputWatts: Double?
@@ -231,20 +233,24 @@ final class PowerMonitor: ObservableObject {
         }
     }
 
-    /// Records a new peak only when two consecutive samples both exceed the old one,
-    /// using the lower of the pair so a single glitchy sample cannot set it.
+    /// Records a new peak of the headline number (charger input on USB-C, battery input on
+    /// MagSafe where no input current sensor exists). Needs two consecutive samples above the
+    /// old peak and uses the lower of the pair so a single glitchy sample cannot set it.
     private func updatePeak(_ snap: PowerSnapshot) {
-        guard snap.externalConnected, let now = snap.chargerInputWatts, now > 0 else {
+        guard snap.externalConnected, let primary = snap.primaryWatts, primary.value > 0 else {
             previousInputWatts = nil
             if !snap.externalConnected { sessionPeak = nil }
             return
         }
+        let now = primary.value
         defer { previousInputWatts = now }
         guard let previous = previousInputWatts else { return }
         let candidate = min(now, previous)
         if candidate > (sessionPeak ?? 0) { sessionPeak = candidate }
         if candidate > (peak?.watts ?? 0) {
-            peak = PeakRecord(watts: candidate, date: snap.date, adapter: snap.adapterName ?? snap.adapterDescription)
+            peak = PeakRecord(watts: candidate, date: snap.date,
+                              adapter: snap.adapterName ?? snap.adapterDescription,
+                              label: primary.label)
             if let data = try? JSONEncoder().encode(peak) {
                 UserDefaults.standard.set(data, forKey: Self.peakKey)
             }
