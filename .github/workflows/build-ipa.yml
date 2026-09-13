@@ -39,7 +39,7 @@ jobs:
       - name: Instalar o XcodeGen
         run: brew install xcodegen
 
-      - name: Ajustar project.yml (tirar o time do dono do repo)
+      - name: Ajustar project.yml (tirar o time do dono, trocar o bundle id)
         env:
           BUNDLE_ID: ${{ inputs.bundle_id }}
         run: |
@@ -51,12 +51,15 @@ jobs:
               sys.exit("bundle_id invalido")
           p = pathlib.Path("project.yml")
           s = p.read_text()
-          # O time do autor original nao existe na sua conta: fora.
+          # O time do autor original nao existe na sua conta: fora (os dois alvos).
           s = re.sub(r"^\s*DEVELOPMENT_TEAM:.*\n", "", s, flags=re.M)
-          s = re.sub(r"CODE_SIGN_STYLE:\s*Automatic", "CODE_SIGN_STYLE: Manual", s)
-          s, n = re.subn(r"PRODUCT_BUNDLE_IDENTIFIER:\s*\S+", f"PRODUCT_BUNDLE_IDENTIFIER: {bid}", s)
-          if n != 1:
-              sys.exit("PRODUCT_BUNDLE_IDENTIFIER nao encontrado - o upstream mudou")
+          s = s.replace("CODE_SIGN_STYLE: Automatic", "CODE_SIGN_STYLE: Manual")
+          # Uma troca so cobre: id do app, id da extensao (.LiveActivity) e os
+          # dois identificadores das tarefas de segundo plano.
+          n = s.count("com.gregwilson.chargespeed")
+          if n != 4:
+              sys.exit(f"esperava 4 ocorrencias do bundle id em project.yml, achei {n} - o upstream mudou")
+          s = s.replace("com.gregwilson.chargespeed", bid)
           p.write_text(s)
           print(s)
           PY
@@ -81,6 +84,21 @@ jobs:
               sys.exit("batteryWattHours nao encontrado - o upstream mudou")
           p.write_text(s)
           print(f"batteryWattHours = {wh}")
+          PY
+
+      - name: Injetar o gancho da Live Activity no PowerMonitor
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import pathlib, sys
+          p = pathlib.Path("ChargeSpeed/PowerMonitor.swift")
+          s = p.read_text()
+          anchor = "        updatePeak(snap)\n"
+          if s.count(anchor) != 1:
+              sys.exit("ancoradouro updatePeak(snap) nao encontrado - o upstream mudou")
+          s = s.replace(anchor, anchor + "        LiveActivityController.shared.sync(self)\n")
+          p.write_text(s)
+          print("gancho injetado")
           PY
 
       - name: Gerar o .xcodeproj
@@ -109,10 +127,19 @@ jobs:
           rm -rf Payload ChargeSpeed-unsigned.ipa
           mkdir Payload
           cp -R "$APP" Payload/
-          rm -rf Payload/ChargeSpeed.app/_CodeSignature
+          # Assinaturas do app E de cada extensao embutida.
+          find Payload -name "_CodeSignature" -type d -prune -exec rm -rf {} +
+          echo "Extensoes embutidas:"
+          if [ -d "Payload/ChargeSpeed.app/PlugIns" ]; then
+            ls -1 "Payload/ChargeSpeed.app/PlugIns"
+          else
+            echo "NENHUMA"
+            echo "A Live Activity nao foi embutida - sem ela o app instala mas o Dynamic Island nao aparece."
+            exit 1
+          fi
           zip -qry ChargeSpeed-unsigned.ipa Payload
           ls -lh ChargeSpeed-unsigned.ipa
-          unzip -l ChargeSpeed-unsigned.ipa | head -20
+          unzip -l ChargeSpeed-unsigned.ipa | head -30
 
       - name: Guardar o log em caso de erro
         if: always()
