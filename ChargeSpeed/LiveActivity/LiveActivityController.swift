@@ -34,6 +34,13 @@ final class LiveActivityController {
     private(set) var lastBackgroundWake: Date?
     private(set) var lastBackgroundKind: String?
 
+    /// Referencia ao monitor que esta alimentando a atividade, para continuar
+    /// medindo nos segundos de graca depois que o app sai de cena.
+    private weak var monitorRef: PowerMonitor?
+    private var graceTask: Task<Void, Never>?
+    /// Quanto tempo os numeros valem antes do iOS marcar como velhos.
+    private var staleWindow: TimeInterval = 600
+
     var isRunning: Bool { activity != nil }
 
     /// Reassume uma atividade que ja estava rodando (app relancado, ou acordado
@@ -54,6 +61,7 @@ final class LiveActivityController {
 
     /// Ponto de entrada unico. Chamado a cada leitura do PowerMonitor.
     func sync(_ monitor: PowerMonitor) {
+        monitorRef = monitor
         guard let snap = monitor.snapshot else { return }
 
         guard snap.externalConnected else {
@@ -72,7 +80,7 @@ final class LiveActivityController {
         if let activity {
             guard shouldPush(state) else { return }
             let content = ActivityContent(state: state,
-                                          staleDate: state.measuredAt.addingTimeInterval(600))
+                                          staleDate: state.measuredAt.addingTimeInterval(staleWindow))
             Task { await activity.update(content) }
             lastPush = .now
             lastState = state
@@ -81,7 +89,32 @@ final class LiveActivityController {
         }
     }
 
+    /// Chamado quando o app sai de cena. O iOS concede uns 30 segundos antes de
+    /// suspender o processo: aproveitamos para continuar medindo. Serve sobretudo
+    /// para pegar o desplugue quando ele acontece logo depois de bloquear a tela.
+    func beginBackgroundGrace() {
+        guard isRunning, let monitor = monitorRef else { return }
+        graceTask?.cancel()
+        staleWindow = 180
+        graceTask = Task { @MainActor in
+            let deadline = Date.now.addingTimeInterval(25)
+            while !Task.isCancelled, Date.now < deadline {
+                monitor.refresh()
+                if monitor.snapshot?.externalConnected == false { return }
+                try? await Task.sleep(for: .seconds(2))
+            }
+        }
+    }
+
+    func endBackgroundGrace() {
+        graceTask?.cancel()
+        graceTask = nil
+        staleWindow = 600
+    }
+
     func endActivity() {
+        graceTask?.cancel()
+        graceTask = nil
         let finishing = activity
         activity = nil
         currentAttributes = nil
@@ -107,7 +140,7 @@ final class LiveActivityController {
             activity = try Activity.request(
                 attributes: attributes,
                 content: ActivityContent(state: state,
-                                         staleDate: state.measuredAt.addingTimeInterval(600)),
+                                         staleDate: state.measuredAt.addingTimeInterval(staleWindow)),
                 pushType: nil)
             currentAttributes = attributes
             lastState = state

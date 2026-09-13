@@ -32,7 +32,7 @@ struct ChargeSpeedLiveActivity: Widget {
                     Text(Fmt.wattsCompact(context.state.watts))
                         .monospacedDigit()
                 }
-                .foregroundStyle(StatusIcon.color(context.state))
+                .foregroundStyle(context.isStale ? .secondary : StatusIcon.color(context.state))
             } compactTrailing: {
                 CompactTrailing(state: context.state)
             } minimal: {
@@ -66,24 +66,28 @@ private struct CompactTrailing: View {
 private struct CenterETA: View {
     let state: ChargeActivityAttributes.ContentState
     var body: some View {
-        VStack(spacing: 1) {
+        VStack(spacing: 0) {
             if state.onHold {
-                Text("em espera").font(.caption2).foregroundStyle(.orange)
                 Text("\(state.percent)%").font(.headline).monospacedDigit()
-            } else if let range = state.etaRange {
-                // Contagem regressiva renderizada pelo sistema, sem atualizacao.
-                Text(timerInterval: range, countsDown: true)
+                Text("em espera").font(.caption2).foregroundStyle(.orange)
+            } else if let eta = state.eta, let range = state.etaRange {
+                // A hora prevista e o numero principal, igual ao "chega as 20:06".
+                Text(eta, style: .time)
                     .font(.headline)
                     .monospacedDigit()
-                    .multilineTextAlignment(.center)
-                Text("ate \(state.targetPercent)%")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
+                // A contagem desce sozinha, sem nenhuma atualizacao nossa.
+                HStack(spacing: 3) {
+                    Text("faltam")
+                    Text(timerInterval: range, countsDown: true).monospacedDigit()
+                }
+                .font(.caption2)
+                .foregroundStyle(.secondary)
             } else {
                 Text("\(state.percent)%").font(.headline).monospacedDigit()
                 Text("carregando").font(.caption2).foregroundStyle(.secondary)
             }
         }
+        .lineLimit(1)
     }
 }
 
@@ -148,14 +152,21 @@ private struct ThermalLine: View {
 /// Esta linha e a medicao do experimento de segundo plano.
 private struct FreshnessLine: View {
     let context: ActivityViewContext<ChargeActivityAttributes>
+
+    private var backgroundText: String {
+        guard let kind = context.state.lastBackgroundKind else { return "bg: nenhum ainda" }
+        return "bg \(kind)"
+    }
+
     var body: some View {
         HStack(spacing: 4) {
             Image(systemName: context.isStale ? "clock.badge.exclamationmark" : "clock")
             Text("medido ") + Text(context.state.measuredAt, style: .time)
             Text("· \(context.state.updateCount) leituras")
-            if let wake = context.state.lastBackgroundWake,
-               let kind = context.state.lastBackgroundKind {
-                Text("· bg \(kind) ") + Text(wake, style: .time)
+            if let wake = context.state.lastBackgroundWake {
+                Text("· \(backgroundText) ") + Text(wake, style: .time)
+            } else {
+                Text("· \(backgroundText)")
             }
             Spacer(minLength: 0)
         }
@@ -243,7 +254,7 @@ private struct ValueBlock: View {
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
         }
-        .frame(maxWidth: .infinity, alignment: alignment == .trailing ? .trailing : .leading)
+        .fixedSize(horizontal: true, vertical: false)
     }
 }
 
