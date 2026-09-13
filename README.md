@@ -9,7 +9,8 @@ APIs it uses (see below).
 ## Why
 
 To compare chargers and cables. iOS shows a lightning bolt and nothing else. Seeing the wattage
-exposed a few bad charging setups I'd been using.
+exposed a few bad charging setups I'd been using. It also shows what a wireless charger actually
+negotiates (MagSafe 15 W versus Qi 7.5 W, say) and what reaches the battery.
 
 ## What it shows (verified on iPhone 17 Pro Max, iOS 26)
 
