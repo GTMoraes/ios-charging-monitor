@@ -42,6 +42,13 @@ They estimate from the percent climb times rated capacity: minutes of delay, bat
 wrong under throttling or holds. This reads the sensors. The same estimate is kept as a fallback
 ("% rate"). Private APIs are why this can't be published: Guideline 2.5.1, and TestFlight scans too.
 
+## IPA
+
+Unsigned, in [Releases](https://github.com/gregsramblings/ios-charging-monitor/releases). Sign it with
+your own Apple ID using any sideloading tool (AltStore, Sideloadly, and similar). Free Apple ID
+signatures last 7 days, paid developer accounts one year. The app needs no entitlements, so nothing
+special is required. I don't provide support for the sideloading step; use the tool's own docs.
+
 ## Build and install
 
 Xcode and [XcodeGen](https://github.com/yonaskolb/XcodeGen). A free Apple ID is enough; no paid
