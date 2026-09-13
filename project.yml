@@ -7,23 +7,67 @@ options:
 settings:
   base:
     SWIFT_VERSION: "5.0"
+
 targets:
   ChargeSpeed:
     type: application
     platform: iOS
     sources:
       - ChargeSpeed
+      - Shared
+    dependencies:
+      - target: ChargeSpeedLiveActivity
+        embed: true
+    info:
+      path: ChargeSpeed/Info.plist
+      properties:
+        CFBundleDisplayName: ChargeSpeed
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+        NSSupportsLiveActivities: true
+        NSSupportsLiveActivitiesFrequentUpdates: true
+        UIBackgroundModes:
+          - fetch
+          - processing
+        BGTaskSchedulerPermittedIdentifiers:
+          - com.gregwilson.chargespeed.refresh
+          - com.gregwilson.chargespeed.processing
     settings:
       base:
-        GENERATE_INFOPLIST_FILE: YES
         PRODUCT_BUNDLE_IDENTIFIER: com.gregwilson.chargespeed
         MARKETING_VERSION: "0.1.0"
         CURRENT_PROJECT_VERSION: 1
         CODE_SIGN_STYLE: Automatic
         DEVELOPMENT_TEAM: MD8FHBP25M
         TARGETED_DEVICE_FAMILY: "1"
-        INFOPLIST_KEY_UILaunchScreen_Generation: YES
-        INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone: UIInterfaceOrientationPortrait
-        INFOPLIST_KEY_CFBundleDisplayName: ChargeSpeed
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         SWIFT_OBJC_BRIDGING_HEADER: ChargeSpeed/ChargeSpeed-Bridging-Header.h
+
+  ChargeSpeedLiveActivity:
+    type: app-extension
+    platform: iOS
+    sources:
+      - ChargeSpeedLiveActivity
+      - Shared
+    info:
+      path: ChargeSpeedLiveActivity/Info.plist
+      properties:
+        CFBundleDisplayName: ChargeSpeed
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.gregwilson.chargespeed.LiveActivity
+        MARKETING_VERSION: "0.1.0"
+        CURRENT_PROJECT_VERSION: 1
+        CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: MD8FHBP25M
+        TARGETED_DEVICE_FAMILY: "1"
+        SKIP_INSTALL: YES
+
+schemes:
+  ChargeSpeed:
+    build:
+      targets:
+        ChargeSpeed: all
