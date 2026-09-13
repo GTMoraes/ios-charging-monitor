@@ -13,10 +13,13 @@ exposed a few bad charging setups I'd been using.
 
 ## What it shows (verified on iPhone 17 Pro Max, iOS 26)
 
-- Watts from the charger, 1 s updates, sparkline. USB-C input voltage × current.
+- Watts from the charger, 1 s updates, sparkline. USB-C input voltage × current. On MagSafe there
+  is no input current sensor, so the headline is watts into the battery instead.
 - Watts into the battery, battery voltage and current.
+- Peak watts for the current charge, kept on screen after unplugging, reset at the next plug-in.
 - Adapter name, negotiated USB-PD profile, full profile list.
-- Temperatures: battery, charger junction, charger die, hottest SoC die.
+- Temperatures: battery, charger junction, hottest SoC die. iOS thermal state, with a red
+  "Throttling" line when it reaches serious or critical; battery turns amber at 38 °C, red at 42 °C.
 - Percent, charging state, low power mode.
 - A charging hold below 100 % (Optimized Battery Charging or charge limit), inferred from behaviour.
 - Raw sensor and dictionary dumps, collapsed.
