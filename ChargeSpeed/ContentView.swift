@@ -148,12 +148,6 @@ struct ContentView: View {
                         Text("Peak \(watts(peak.watts))")
                             .font(.footnote.weight(.semibold))
                             .monospacedDigit()
-                        if let session = monitor.sessionPeak, snap.externalConnected {
-                            Text("· session \(watts(session))")
-                                .font(.footnote)
-                                .foregroundStyle(.secondary)
-                                .monospacedDigit()
-                        }
                     } else {
                         Text("Peak —")
                             .font(.footnote.weight(.semibold))
@@ -169,7 +163,7 @@ struct ContentView: View {
                 Text(monitor.peak.map { peak in
                         [peak.label, peak.adapter, peak.date.formatted(date: .abbreviated, time: .shortened)]
                             .compactMap { $0 }.joined(separator: " · ")
-                     } ?? "recorded while charging")
+                     } ?? "resets at each plug-in")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }

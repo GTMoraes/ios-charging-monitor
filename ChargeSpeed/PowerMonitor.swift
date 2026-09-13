@@ -31,8 +31,17 @@ final class PowerMonitor: ObservableObject {
 
     /// Highest charger input power seen since the last reset, persisted across launches.
     @Published private(set) var peak: PeakRecord?
-    /// Highest charger input power since the last plug-in.
-    @Published private(set) var sessionPeak: Double?
+    /// Identity of the current charging session, persisted so a relaunch mid-session keeps the peak.
+    /// A session starts at plug-in and survives reaching full and topping off; it ends at unplug.
+    struct ChargingSession: Codable {
+        var start: Date
+        var adapterIdentity: String?
+        var lastSeenPluggedIn: Bool
+        var lastSeenPercent: Int?
+    }
+    private var session: ChargingSession?
+    private var lastPluggedIn: Bool?
+    private static let sessionKey = "chargingSession"
 
     struct PeakRecord: Codable {
         let watts: Double
@@ -89,11 +98,14 @@ final class PowerMonitor: ObservableObject {
            let record = try? JSONDecoder().decode(PeakRecord.self, from: data) {
             peak = record
         }
+        if let data = UserDefaults.standard.data(forKey: Self.sessionKey),
+           let saved = try? JSONDecoder().decode(ChargingSession.self, from: data) {
+            session = saved
+        }
     }
 
     func resetPeak() {
         peak = nil
-        sessionPeak = nil
         recentSamples.removeAll()
         UserDefaults.standard.removeObject(forKey: Self.peakKey)
     }
@@ -138,6 +150,7 @@ final class PowerMonitor: ObservableObject {
         snapshot = snap
         updateEstimate(snap)
         updateHold(snap)
+        updateSession(snap)
         updatePeak(snap)
         let state = ProcessInfo.processInfo.thermalState
         if state != thermalState { thermalState = state }
@@ -240,20 +253,83 @@ final class PowerMonitor: ObservableObject {
         }
     }
 
-    /// Records a new peak of the headline number (charger input on USB-C, battery input on
-    /// MagSafe where no input current sensor exists). Uses the median of the last three samples
-    /// so a single glitchy reading cannot set it, while anything sustained for two seconds does.
+    /// Adapter serial where available, otherwise a composite of the adapter's static fields.
+    private func adapterIdentity(_ snap: PowerSnapshot) -> String? {
+        guard let a = snap.adapter else { return nil }
+        if let serial = a["SerialString"] as? String, !serial.isEmpty { return serial }
+        return ["Name", "Description", "Model", "AdapterID"].compactMap { a[$0].map { String(describing: $0) } }.joined(separator: "|")
+    }
+
+    /// Detects plug-in events and resets the peak at the start of each charging session.
+    /// While running, any unplugged → plugged transition is a new session. On the first tick after
+    /// launch, the persisted session is continued only if the phone was still plugged in when last
+    /// seen, the adapter is the same, and the level has not dropped (i.e. no unplug happened while
+    /// the app was closed).
+    private func updateSession(_ snap: PowerSnapshot) {
+        let pluggedIn = snap.externalConnected
+        defer { lastPluggedIn = pluggedIn }
+
+        if pluggedIn {
+            var isNew = false
+            if lastPluggedIn == false {
+                isNew = true
+            } else if lastPluggedIn == nil {
+                if let saved = session, saved.lastSeenPluggedIn,
+                   saved.adapterIdentity == adapterIdentity(snap),
+                   (snap.percent ?? 0) >= (saved.lastSeenPercent ?? 0) - 1 {
+                    isNew = false
+                } else {
+                    isNew = true
+                }
+            }
+            if isNew {
+                peak = nil
+                recentSamples.removeAll()
+                UserDefaults.standard.removeObject(forKey: Self.peakKey)
+                session = ChargingSession(start: snap.date, adapterIdentity: adapterIdentity(snap),
+                                          lastSeenPluggedIn: true, lastSeenPercent: snap.percent)
+                persistSession()
+            } else if var current = session {
+                if current.adapterIdentity == nil { current.adapterIdentity = adapterIdentity(snap) }
+                if !current.lastSeenPluggedIn || current.lastSeenPercent != snap.percent {
+                    current.lastSeenPluggedIn = true
+                    current.lastSeenPercent = snap.percent
+                    session = current
+                    persistSession()
+                } else {
+                    session = current
+                }
+            } else {
+                session = ChargingSession(start: snap.date, adapterIdentity: adapterIdentity(snap),
+                                          lastSeenPluggedIn: true, lastSeenPercent: snap.percent)
+                persistSession()
+            }
+        } else if var current = session, current.lastSeenPluggedIn {
+            current.lastSeenPluggedIn = false
+            current.lastSeenPercent = snap.percent
+            session = current
+            persistSession()
+        }
+    }
+
+    private func persistSession() {
+        if let session, let data = try? JSONEncoder().encode(session) {
+            UserDefaults.standard.set(data, forKey: Self.sessionKey)
+        }
+    }
+
+    /// Records the peak of the headline number (charger input on USB-C, battery input on
+    /// MagSafe where no input current sensor exists) for the current charging session. Uses the
+    /// median of the last three samples so a single glitchy reading cannot set it.
     private func updatePeak(_ snap: PowerSnapshot) {
         guard snap.externalConnected, let primary = snap.primaryWatts, primary.value > 0 else {
             recentSamples.removeAll()
-            if !snap.externalConnected { sessionPeak = nil }
             return
         }
         recentSamples.append(primary.value)
         if recentSamples.count > 3 { recentSamples.removeFirst(recentSamples.count - 3) }
         guard recentSamples.count == 3 else { return }
         let candidate = recentSamples.sorted()[1]
-        if candidate > (sessionPeak ?? 0) { sessionPeak = candidate }
         if candidate > (peak?.watts ?? 0) {
             peak = PeakRecord(watts: candidate, date: snap.date,
                               adapter: snap.adapterName ?? snap.adapterDescription,
