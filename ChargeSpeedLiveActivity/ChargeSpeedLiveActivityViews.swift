@@ -226,38 +226,6 @@ private struct ThermalLine: View {
     }
 }
 
-/// Quando os numeros foram medidos, e quando o iOS acordou o app pela ultima vez.
-/// Esta linha e a medicao do experimento de segundo plano.
-private struct FreshnessLine: View {
-    let context: ActivityViewContext<ChargeActivityAttributes>
-
-    private var backgroundText: String {
-        if context.state.continuous { return "continuo" }
-        guard let kind = context.state.lastBackgroundKind else { return "bg: nenhum ainda" }
-        return "bg \(kind)"
-    }
-
-    var body: some View {
-        HStack(spacing: 4) {
-            Image(systemName: context.isStale ? "clock.badge.exclamationmark" : "clock")
-            Text("medido ") + Text(context.state.measuredAt, style: .time)
-            Text("· \(context.state.updateCount) leituras")
-            if context.state.continuous {
-                Text("· continuo")
-            } else if let wake = context.state.lastBackgroundWake {
-                Text("· \(backgroundText) ") + Text(wake, style: .time)
-            } else {
-                Text("· \(backgroundText)")
-            }
-            Spacer(minLength: 0)
-        }
-        .font(.system(size: 10))
-        .monospacedDigit()
-        .foregroundStyle(context.isStale ? .orange : .secondary)
-        .lineLimit(1)
-    }
-}
-
 // MARK: - Tela de bloqueio
 
 private struct LockScreenCard: View {
@@ -312,36 +280,61 @@ private struct LockScreenCard: View {
 
             LockScreenFooter(context: context)
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
+        .padding(.horizontal, 18)
+        .padding(.vertical, 12)
     }
 }
 
-/// Rodape do cartao da tela de bloqueio: sempre completo, inclusive a linha de
-/// frescor que foi tirada da ilha.
+/// Rodape do cartao da tela de bloqueio.
+///
+/// A linha de "medido / leituras / continuo" saiu: ela existia para medir o
+/// experimento do segundo plano, que ja foi respondido. Adaptador, temperatura e
+/// pico foram fundidos numa linha so, e o perfil PD fica na outra ponta.
 private struct LockScreenFooter: View {
     let context: ActivityViewContext<ChargeActivityAttributes>
+
     var body: some View {
-        VStack(spacing: 5) {
+        VStack(spacing: 7) {
             ProgressView(value: Double(min(context.state.percent, context.state.targetPercent)),
                          total: Double(context.state.targetPercent))
                 .tint(context.state.onHold ? .orange : .green)
 
-            HStack(spacing: 6) {
+            HStack(spacing: 8) {
                 Label(context.attributes.adapterName,
                       systemImage: context.state.isWireless ? "wave.3.right" : "cable.connector")
-                    .lineLimit(1)
-                Spacer(minLength: 4)
+
+                if let t = context.state.batteryTempC {
+                    Text("·").foregroundStyle(.tertiary)
+                    Label(String(format: "%.1f °C", t), systemImage: "thermometer.medium")
+                        .foregroundStyle(tempTint(t))
+                }
+
+                if let peak = context.state.peakWatts, peak > 0 {
+                    Text("·").foregroundStyle(.tertiary)
+                    Label(Fmt.watts(peak), systemImage: "arrow.up.right")
+                }
+
+                if context.state.throttling {
+                    Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+                }
+
+                Spacer(minLength: 6)
+
                 if !context.attributes.negotiated.isEmpty {
-                    Text(context.attributes.negotiated).lineLimit(1)
+                    Text(context.attributes.negotiated)
                 }
             }
             .font(.caption2)
             .foregroundStyle(.secondary)
-
-            ThermalLine(state: context.state, showsPeak: true)
-            FreshnessLine(context: context)
+            .lineLimit(1)
+            .minimumScaleFactor(0.75)
         }
+    }
+
+    private func tempTint(_ t: Double) -> Color {
+        if t >= 40 { return .red }
+        if t >= 37 { return .orange }
+        return .secondary
     }
 }
 
