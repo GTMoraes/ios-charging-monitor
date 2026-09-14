@@ -14,8 +14,9 @@ struct ChargeSpeedApp: App {
             ContentView()
                 .onAppear {
                     LiveActivityController.shared.adopt()
-                    // O prompt de localizacao so pode aparecer em primeiro plano,
-                    // e so aparece se voce ligou o monitor continuo.
+                    // O prompt de localizacao so pode aparecer em primeiro plano.
+                    // Autorizar liga o modo continuo; negar deixa o app igual ao
+                    // que era, sem medicao com a tela apagada.
                     KeepAlive.shared.requestAuthorizationIfNeeded()
                 }
         }

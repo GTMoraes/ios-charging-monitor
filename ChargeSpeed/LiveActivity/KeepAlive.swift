@@ -27,14 +27,9 @@ final class KeepAlive: NSObject {
     private let manager = CLLocationManager()
     private(set) var isActive = false
 
-    private static let enabledKey = "keepAliveEnabled"
-
-    /// Preferencia do usuario. Ligada pela acao "Iniciar monitor continuo" dos
-    /// Atalhos; desligada pela acao "Parar monitor de carga".
-    static var isEnabled: Bool {
-        get { UserDefaults.standard.bool(forKey: enabledKey) }
-        set { UserDefaults.standard.set(newValue, forKey: enabledKey) }
-    }
+    /// Nao ha preferencia interna: o interruptor e a propria permissao de
+    /// localizacao do iOS, que e onde a pessoa espera controlar isso.
+    /// Ajustes -> ChargeSpeed -> Localizacao -> Nunca desliga o modo continuo.
 
     var authorization: CLAuthorizationStatus { manager.authorizationStatus }
     var isAuthorized: Bool {
@@ -43,11 +38,10 @@ final class KeepAlive: NSObject {
 
     /// Texto curto de status, para as acoes dos Atalhos responderem algo util.
     var statusText: String {
-        if !Self.isEnabled { return "monitor continuo desligado" }
         switch authorization {
-        case .notDetermined: return "falta autorizar a localizacao — abra o app uma vez"
-        case .denied, .restricted: return "localizacao negada em Ajustes"
-        default: return isActive ? "monitor continuo ativo" : "monitor continuo pronto"
+        case .notDetermined: return "abra o app uma vez para autorizar"
+        case .denied, .restricted: return "modo continuo desligado (localizacao negada)"
+        default: return isActive ? "modo continuo ativo" : "modo continuo pronto"
         }
     }
 
@@ -64,12 +58,12 @@ final class KeepAlive: NSObject {
     /// So funciona com o app em primeiro plano — por isso o fluxo pede para
     /// abrir o app uma vez depois de ligar o monitor continuo.
     func requestAuthorizationIfNeeded() {
-        guard Self.isEnabled, authorization == .notDetermined else { return }
+        guard authorization == .notDetermined else { return }
         manager.requestWhenInUseAuthorization()
     }
 
     func start() {
-        guard Self.isEnabled, isAuthorized, !isActive else { return }
+        guard isAuthorized, !isActive else { return }
         manager.allowsBackgroundLocationUpdates = true
         manager.startUpdatingLocation()
         isActive = true

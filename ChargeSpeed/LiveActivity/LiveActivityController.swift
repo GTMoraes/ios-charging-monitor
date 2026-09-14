@@ -27,6 +27,11 @@ final class LiveActivityController {
 
     /// A previsao e recalculada apenas quando o nivel muda, senao a contagem
     /// ficaria tremendo a cada leitura.
+    /// Desde quando a leitura crua diz "em espera". Logo depois de plugar ela
+    /// diz isso por alguns segundos, antes da corrente subir — reportar na hora
+    /// deixaria a Live Activity travada num "em espera / 0.0 W" que e mentira.
+    private var holdSince: Date?
+
     private var anchorPercent: Int?
     private var anchorETA: Date?
     private var anchorStart: Date?
@@ -180,6 +185,7 @@ final class LiveActivityController {
         anchorPercent = nil
         anchorETA = nil
         anchorStart = nil
+        holdSince = nil
         updateCount = 0
         let final = lastState
         lastState = nil
@@ -245,13 +251,22 @@ final class LiveActivityController {
                            monitor: PowerMonitor) -> ChargeActivityAttributes.ContentState {
         updateCount += 1
         let percent = snap.percent ?? 0
+
+        // "Em espera" so vale depois de 45 s consistentes, o mesmo criterio que o
+        // PowerMonitor usa para registrar um hold de verdade.
+        if snap.isChargingOnHold {
+            if holdSince == nil { holdSince = snap.date }
+        } else {
+            holdSince = nil
+        }
+        let settledHold = holdSince.map { snap.date.timeIntervalSince($0) >= 45 } ?? false
         let into = snap.batteryWatts
         let primary = snap.primaryWatts
 
         if anchorPercent != percent {
             anchorPercent = percent
             anchorStart = .now
-            if snap.isChargingOnHold || percent >= Self.targetPercent {
+            if settledHold || percent >= Self.targetPercent {
                 anchorETA = nil
             } else {
                 // A previsao usa os watts que chegam na BATERIA, nao os da tomada:
@@ -272,7 +287,7 @@ final class LiveActivityController {
             targetPercent: Self.targetPercent,
             eta: anchorETA,
             etaStart: anchorStart ?? .now,
-            onHold: snap.isChargingOnHold,
+            onHold: settledHold,
             isWireless: snap.isWirelessInput,
             inputVoltage: snap.isWirelessInput ? snap.wirelessInputVoltage : snap.usbInputVoltage,
             inputCurrent: snap.usbInputCurrent,
