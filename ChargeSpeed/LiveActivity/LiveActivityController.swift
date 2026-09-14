@@ -50,6 +50,13 @@ final class LiveActivityController {
     /// de medicao morreria antes da primeira leitura boa. Liberado assim que o
     /// app volta ao primeiro plano, para nao coexistir com o do ContentView.
     private var ownedMonitor: PowerMonitor?
+    /// Apresentacao escolhida pelo atalho que chamou. Persistida para o app
+    /// manter a escolha entre relancamentos.
+    var detailedLayout: Bool {
+        get { UserDefaults.standard.bool(forKey: "detailedLayout") }
+        set { UserDefaults.standard.set(newValue, forKey: "detailedLayout") }
+    }
+
     /// Verdadeiro quando o app tem interface ativa. Nesse caso o monitor do
     /// ContentView ja esta medindo, e o intent nao deve criar um segundo — dois
     /// monitores gravariam o mesmo pico e a mesma sessao no UserDefaults.
@@ -270,6 +277,7 @@ final class LiveActivityController {
         if state.onHold != last.onHold { return true }
         if state.eta != last.eta { return true }
         if state.throttling != last.throttling { return true }
+        if state.detailed != last.detailed { return true }
         if state.lastBackgroundWake != last.lastBackgroundWake { return true }
         return Date.now.timeIntervalSince(lastPush) >= Self.minInterval
     }
@@ -339,6 +347,7 @@ final class LiveActivityController {
             peakWatts: monitor.peak?.watts,
             throttling: monitor.isThrottling,
             continuous: KeepAlive.shared.isActive,
+            detailed: detailedLayout,
             measuredAt: snap.date,
             updateCount: updateCount,
             lastBackgroundWake: lastBackgroundWake,

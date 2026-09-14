@@ -34,6 +34,11 @@ struct ChargeActivityAttributes: ActivityAttributes, Equatable {
         var throttling: Bool
         /// Monitor continuo ativo: o app esta medindo com a tela apagada.
         var continuous: Bool
+        /// Apresentacao da ilha expandida. `false` = enxuta (so o essencial, para
+        /// a aparicao automatica nao virar um card na cara); `true` = completa.
+        /// Fica no estado, e nao nos atributos, justamente para poder ser trocada
+        /// em pleno voo sem recriar a atividade — recriar expande a ilha.
+        var detailed: Bool
 
         /// Instante da leitura que gerou este estado.
         var measuredAt: Date

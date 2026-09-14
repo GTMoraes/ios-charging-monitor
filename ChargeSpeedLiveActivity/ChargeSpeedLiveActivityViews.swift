@@ -91,28 +91,42 @@ private struct CenterETA: View {
     }
 }
 
+/// Rodape da ilha expandida. Duas apresentacoes, escolhidas pelo atalho que
+/// criou (ou atualizou) a atividade:
+///
+/// - **enxuta**: so uma linha fina de temperatura. A ilha fica quase da altura
+///   da compacta, entao a aparicao automatica vira um pisca lateral em vez de um
+///   card na sua cara.
+/// - **completa**: barra de progresso, adaptador, perfil PD, temperatura e pico.
+///
+/// A linha de "medido / leituras" nao aparece em nenhuma das duas — ela vive so
+/// no cartao da tela de bloqueio, onde ha espaco e voce consulta com calma.
 private struct BottomDetail: View {
     let context: ActivityViewContext<ChargeActivityAttributes>
+
     var body: some View {
-        VStack(spacing: 5) {
-            ProgressView(value: Double(min(context.state.percent, context.state.targetPercent)),
-                         total: Double(context.state.targetPercent))
-                .tint(context.state.onHold ? .orange : .green)
+        if context.state.detailed {
+            VStack(spacing: 5) {
+                ProgressView(value: Double(min(context.state.percent, context.state.targetPercent)),
+                             total: Double(context.state.targetPercent))
+                    .tint(context.state.onHold ? .orange : .green)
 
-            HStack(spacing: 6) {
-                Label(context.attributes.adapterName,
-                      systemImage: context.state.isWireless ? "wave.3.right" : "cable.connector")
-                    .lineLimit(1)
-                Spacer(minLength: 4)
-                if !context.attributes.negotiated.isEmpty {
-                    Text(context.attributes.negotiated).lineLimit(1)
+                HStack(spacing: 6) {
+                    Label(context.attributes.adapterName,
+                          systemImage: context.state.isWireless ? "wave.3.right" : "cable.connector")
+                        .lineLimit(1)
+                    Spacer(minLength: 4)
+                    if !context.attributes.negotiated.isEmpty {
+                        Text(context.attributes.negotiated).lineLimit(1)
+                    }
                 }
-            }
-            .font(.caption2)
-            .foregroundStyle(.secondary)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
 
-            ThermalLine(state: context.state)
-            FreshnessLine(context: context)
+                ThermalLine(state: context.state, showsPeak: true)
+            }
+        } else {
+            ThermalLine(state: context.state, showsPeak: false)
         }
     }
 }
@@ -121,13 +135,14 @@ private struct BottomDetail: View {
 /// especialmente no sem fio dentro do bolso.
 private struct ThermalLine: View {
     let state: ChargeActivityAttributes.ContentState
+    var showsPeak: Bool = true
     var body: some View {
         HStack(spacing: 6) {
             if let t = state.batteryTempC {
                 Label(String(format: "%.1f C", t), systemImage: "thermometer.medium")
                     .foregroundStyle(tint(t))
             }
-            if let peak = state.peakWatts {
+            if showsPeak, let peak = state.peakWatts {
                 Label(Fmt.watts(peak), systemImage: "arrow.up.right")
                     .foregroundStyle(.secondary)
             }
@@ -232,10 +247,38 @@ private struct LockScreenCard: View {
                 Spacer(minLength: 0)
             }
 
-            BottomDetail(context: context)
+            LockScreenFooter(context: context)
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
+    }
+}
+
+/// Rodape do cartao da tela de bloqueio: sempre completo, inclusive a linha de
+/// frescor que foi tirada da ilha.
+private struct LockScreenFooter: View {
+    let context: ActivityViewContext<ChargeActivityAttributes>
+    var body: some View {
+        VStack(spacing: 5) {
+            ProgressView(value: Double(min(context.state.percent, context.state.targetPercent)),
+                         total: Double(context.state.targetPercent))
+                .tint(context.state.onHold ? .orange : .green)
+
+            HStack(spacing: 6) {
+                Label(context.attributes.adapterName,
+                      systemImage: context.state.isWireless ? "wave.3.right" : "cable.connector")
+                    .lineLimit(1)
+                Spacer(minLength: 4)
+                if !context.attributes.negotiated.isEmpty {
+                    Text(context.attributes.negotiated).lineLimit(1)
+                }
+            }
+            .font(.caption2)
+            .foregroundStyle(.secondary)
+
+            ThermalLine(state: context.state, showsPeak: true)
+            FreshnessLine(context: context)
+        }
     }
 }
 
