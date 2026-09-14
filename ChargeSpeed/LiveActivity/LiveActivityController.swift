@@ -45,6 +45,18 @@ final class LiveActivityController {
     /// Referencia ao monitor que esta alimentando a atividade, para continuar
     /// medindo nos segundos de graca depois que o app sai de cena.
     private weak var monitorRef: PowerMonitor?
+    /// Monitor proprio, para quando o app e acordado sem interface (pelo Atalho).
+    /// Sem isto o monitor local do intent seria desalocado no `return` e o loop
+    /// de medicao morreria antes da primeira leitura boa. Liberado assim que o
+    /// app volta ao primeiro plano, para nao coexistir com o do ContentView.
+    private var ownedMonitor: PowerMonitor?
+    /// Verdadeiro quando o app tem interface ativa. Nesse caso o monitor do
+    /// ContentView ja esta medindo, e o intent nao deve criar um segundo — dois
+    /// monitores gravariam o mesmo pico e a mesma sessao no UserDefaults.
+    private var appIsActive = false
+    /// Leituras seguidas dizendo "desconectado". Uma leitura ruim isolada nao
+    /// pode encerrar a atividade.
+    private var disconnectedStreak = 0
     private var graceTask: Task<Void, Never>?
     /// Quanto tempo os numeros valem antes do iOS marcar como velhos.
     private var staleWindow: TimeInterval = 600
@@ -53,6 +65,24 @@ final class LiveActivityController {
 
     /// Reassume uma atividade que ja estava rodando (app relancado, ou acordado
     /// em segundo plano num processo novo).
+    /// Assume a posse do monitor criado pelo intent, para o loop continuar
+    /// rodando depois que `perform()` retorna. Ignorado quando o app esta em
+    /// primeiro plano: ali quem manda e o monitor do ContentView.
+    func takeOwnership(of monitor: PowerMonitor) {
+        guard !appIsActive else { return }
+        ownedMonitor = monitor
+        monitorRef = monitor
+    }
+
+    /// Chamado pelas transicoes de cena do app.
+    func setAppActive(_ active: Bool) {
+        appIsActive = active
+        if active { ownedMonitor = nil }
+    }
+
+    /// Verdadeiro quando ha um loop de medicao de fundo rodando agora.
+    var isMeasuring: Bool { graceTask != nil }
+
     func adopt() {
         if activity == nil {
             activity = Activity<ChargeActivityAttributes>.activities.first
@@ -73,9 +103,11 @@ final class LiveActivityController {
         guard let snap = monitor.snapshot else { return }
 
         guard snap.externalConnected else {
-            endActivity()
+            disconnectedStreak += 1
+            if disconnectedStreak >= 3 { endActivity() }
             return
         }
+        disconnectedStreak = 0
 
         let attributes = makeAttributes(snap)
         let state = makeState(snap, monitor: monitor)
@@ -132,10 +164,18 @@ final class LiveActivityController {
                 guard let snap = monitor.snapshot else { return }
 
                 if !snap.externalConnected {
-                    KeepAlive.shared.stop()
-                    endActivity()
-                    return
+                    // Confirma em ritmo rapido antes de encerrar: uma leitura
+                    // ruim isolada nao pode derrubar a Live Activity.
+                    disconnectedStreak += 1
+                    if disconnectedStreak >= 3 {
+                        KeepAlive.shared.stop()
+                        endActivity()
+                        return
+                    }
+                    try? await Task.sleep(for: .seconds(1))
+                    continue
                 }
+                disconnectedStreak = 0
 
                 // Sem monitor continuo, so a janela de cortesia do sistema.
                 if !KeepAlive.shared.isActive, Date.now > graceDeadline { return }
@@ -173,6 +213,8 @@ final class LiveActivityController {
         graceTask?.cancel()
         graceTask = nil
         staleWindow = 600
+        // O monitor do ContentView reassume daqui em diante.
+        ownedMonitor = nil
     }
 
     func endActivity() {
@@ -186,6 +228,8 @@ final class LiveActivityController {
         anchorETA = nil
         anchorStart = nil
         holdSince = nil
+        disconnectedStreak = 0
+        ownedMonitor = nil
         updateCount = 0
         let final = lastState
         lastState = nil

@@ -22,7 +22,7 @@ struct StartChargeMonitorIntent: LiveActivityIntent {
         // ficaria congelada na Live Activity ate o app ser aberto de novo.
         // Espera a potencia aparecer de verdade antes de criar a atividade.
         var pluggedIn = false
-        for _ in 0..<8 {
+        for _ in 0..<4 {
             monitor.refresh()
             guard let snap = monitor.snapshot else { break }
             pluggedIn = snap.externalConnected
@@ -41,6 +41,16 @@ struct StartChargeMonitorIntent: LiveActivityIntent {
         LiveActivityController.shared.adopt()
         LiveActivityController.shared.noteBackgroundWake("atalho")
         LiveActivityController.shared.sync(monitor)
+
+        // A primeira leitura de um processo recem-acordado costuma vir vazia: os
+        // sensores HID ainda nao responderam. Em vez de esperar mais aqui (o
+        // intent tem orcamento curto), entrega a atividade e deixa o loop
+        // continuo corrigir o valor em poucos segundos. `takeOwnership` e o que
+        // mantem o monitor vivo depois que este metodo retorna.
+        LiveActivityController.shared.takeOwnership(of: monitor)
+        if !LiveActivityController.shared.isMeasuring {
+            LiveActivityController.shared.beginBackgroundGrace()
+        }
         BackgroundRefresh.schedule(after: 60)
 
         if let failure = LiveActivityController.shared.lastFailure {

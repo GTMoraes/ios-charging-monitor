@@ -23,13 +23,16 @@ struct ChargeSpeedApp: App {
         .onChange(of: scenePhase) { _, phase in
             switch phase {
             case .background:
+                LiveActivityController.shared.setAppActive(false)
                 BackgroundRefresh.schedule()
                 LiveActivityController.shared.beginBackgroundGrace()
             case .active:
+                LiveActivityController.shared.setAppActive(true)
                 LiveActivityController.shared.endBackgroundGrace()
                 LiveActivityController.shared.adopt()
                 KeepAlive.shared.requestAuthorizationIfNeeded()
             default:
+                LiveActivityController.shared.setAppActive(false)
                 LiveActivityController.shared.beginBackgroundGrace()
             }
         }
