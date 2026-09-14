@@ -10,21 +10,45 @@ struct ChargeSpeedLiveActivity: Widget {
                 .activitySystemActionForegroundColor(.white)
         } dynamicIsland: { context in
             DynamicIsland {
+                // As regioes laterais encostam na curvatura da ilha: sem margem,
+                // o primeiro e o ultimo caractere saem cortados. Dai o padding.
                 DynamicIslandExpandedRegion(.leading) {
-                    ValueBlock(title: context.state.isWireless ? "na bobina" : "na tomada",
-                               value: Fmt.watts(context.state.watts),
-                               alignment: .leading)
+                    if context.state.detailed {
+                        ValueBlock(title: context.state.isWireless ? "na bobina" : "na tomada",
+                                   value: Fmt.watts(context.state.watts),
+                                   alignment: .leading)
+                            .padding(.leading, 10)
+                    } else {
+                        LeanValue(text: Fmt.watts(context.state.watts),
+                                  tint: StatusIcon.color(context.state))
+                            .padding(.leading, 10)
+                    }
                 }
                 DynamicIslandExpandedRegion(.trailing) {
-                    ValueBlock(title: "na bateria",
-                               value: Fmt.watts(context.state.intoBatteryWatts),
-                               alignment: .trailing)
+                    if context.state.detailed {
+                        ValueBlock(title: "na bateria",
+                                   value: Fmt.watts(context.state.intoBatteryWatts),
+                                   alignment: .trailing)
+                            .padding(.trailing, 10)
+                    } else {
+                        LeanValue(text: Fmt.watts(context.state.intoBatteryWatts),
+                                  tint: .secondary)
+                            .padding(.trailing, 10)
+                    }
                 }
                 DynamicIslandExpandedRegion(.center) {
-                    CenterETA(state: context.state)
+                    if context.state.detailed {
+                        CenterETA(state: context.state)
+                    } else {
+                        LeanCenter(state: context.state)
+                    }
                 }
                 DynamicIslandExpandedRegion(.bottom) {
-                    BottomDetail(context: context)
+                    // No modo enxuto o rodape some inteiro: e ele que fazia a
+                    // ilha virar um card de tres alturas.
+                    if context.state.detailed {
+                        BottomDetail(context: context)
+                    }
                 }
             } compactLeading: {
                 HStack(spacing: 2) {
@@ -60,6 +84,45 @@ private struct CompactTrailing: View {
                 .monospacedDigit()
                 .foregroundStyle(state.onHold ? .orange : .green)
         }
+    }
+}
+
+/// Um numero e mais nada: uma linha de altura, sem legenda embaixo.
+private struct LeanValue: View {
+    let text: String
+    var tint: Color = .primary
+    var body: some View {
+        Text(text)
+            .font(.system(.subheadline, design: .rounded).weight(.semibold))
+            .monospacedDigit()
+            .foregroundStyle(tint)
+            .lineLimit(1)
+            .minimumScaleFactor(0.7)
+            .fixedSize(horizontal: true, vertical: false)
+    }
+}
+
+/// Centro do modo enxuto: o nivel alinhado com as potencias dos lados, e a
+/// temperatura logo abaixo em letra miuda — ocupando o vao estreito do centro
+/// em vez de uma terceira faixa na largura toda.
+private struct LeanCenter: View {
+    let state: ChargeActivityAttributes.ContentState
+    var body: some View {
+        VStack(spacing: -1) {
+            Text("\(state.percent)%")
+                .font(.system(.subheadline, design: .rounded).weight(.semibold))
+                .monospacedDigit()
+            if let t = state.batteryTempC {
+                Text(String(format: "%.1f°", t))
+                    .font(.system(size: 10))
+                    .monospacedDigit()
+                    .foregroundStyle(state.throttling ? .orange : .secondary)
+            } else if state.onHold {
+                Text("em espera").font(.system(size: 10)).foregroundStyle(.orange)
+            }
+        }
+        .lineLimit(1)
+        .fixedSize()
     }
 }
 
