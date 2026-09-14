@@ -30,6 +30,13 @@ targets:
         UIBackgroundModes:
           - fetch
           - processing
+          - location
+        NSLocationWhenInUseUsageDescription: >-
+          O ChargeSpeed nao usa a sua localizacao. A permissao existe apenas
+          porque o iOS nao oferece outro modo de manter o app medindo os sensores
+          de carga com a tela apagada. Nenhuma coordenada e lida, guardada ou
+          enviada, e o servico fica ativo somente enquanto o carregador esta
+          conectado.
         BGTaskSchedulerPermittedIdentifiers:
           - com.gregwilson.chargespeed.refresh
           - com.gregwilson.chargespeed.processing

@@ -32,6 +32,8 @@ struct ChargeActivityAttributes: ActivityAttributes, Equatable {
         var peakWatts: Double?
         /// iOS declarou estado termico serio/critico — a carga esta sendo cortada.
         var throttling: Bool
+        /// Monitor continuo ativo: o app esta medindo com a tela apagada.
+        var continuous: Bool
 
         /// Instante da leitura que gerou este estado.
         var measuredAt: Date

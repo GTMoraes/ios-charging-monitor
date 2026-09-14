@@ -154,6 +154,7 @@ private struct FreshnessLine: View {
     let context: ActivityViewContext<ChargeActivityAttributes>
 
     private var backgroundText: String {
+        if context.state.continuous { return "continuo" }
         guard let kind = context.state.lastBackgroundKind else { return "bg: nenhum ainda" }
         return "bg \(kind)"
     }
@@ -163,7 +164,9 @@ private struct FreshnessLine: View {
             Image(systemName: context.isStale ? "clock.badge.exclamationmark" : "clock")
             Text("medido ") + Text(context.state.measuredAt, style: .time)
             Text("· \(context.state.updateCount) leituras")
-            if let wake = context.state.lastBackgroundWake {
+            if context.state.continuous {
+                Text("· continuo")
+            } else if let wake = context.state.lastBackgroundWake {
                 Text("· \(backgroundText) ") + Text(wake, style: .time)
             } else {
                 Text("· \(backgroundText)")

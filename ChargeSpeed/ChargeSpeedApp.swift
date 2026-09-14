@@ -12,7 +12,12 @@ struct ChargeSpeedApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView()
-                .onAppear { LiveActivityController.shared.adopt() }
+                .onAppear {
+                    LiveActivityController.shared.adopt()
+                    // O prompt de localizacao so pode aparecer em primeiro plano,
+                    // e so aparece se voce ligou o monitor continuo.
+                    KeepAlive.shared.requestAuthorizationIfNeeded()
+                }
         }
         .onChange(of: scenePhase) { _, phase in
             switch phase {
@@ -22,6 +27,7 @@ struct ChargeSpeedApp: App {
             case .active:
                 LiveActivityController.shared.endBackgroundGrace()
                 LiveActivityController.shared.adopt()
+                KeepAlive.shared.requestAuthorizationIfNeeded()
             default:
                 LiveActivityController.shared.beginBackgroundGrace()
             }

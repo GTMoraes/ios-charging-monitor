@@ -33,6 +33,9 @@ final class LiveActivityController {
 
     private(set) var lastBackgroundWake: Date?
     private(set) var lastBackgroundKind: String?
+    /// Motivo da ultima falha ao criar a atividade. `visibility` significa que o
+    /// app tentou criar em background sem o privilegio de LiveActivityIntent.
+    private(set) var lastFailure: String?
 
     /// Referencia ao monitor que esta alimentando a atividade, para continuar
     /// medindo nos segundos de graca depois que o app sai de cena.
@@ -89,19 +92,74 @@ final class LiveActivityController {
         }
     }
 
-    /// Chamado quando o app sai de cena. O iOS concede uns 30 segundos antes de
-    /// suspender o processo: aproveitamos para continuar medindo. Serve sobretudo
-    /// para pegar o desplugue quando ele acontece logo depois de bloquear a tela.
+    /// Chamado quando o app sai de cena.
+    ///
+    /// Sem monitor continuo: o iOS concede uns 30 segundos antes de suspender o
+    /// processo, e o loop para ai. Serve para pegar o desplugue imediato.
+    ///
+    /// Com monitor continuo: o loop segue enquanto o carregador estiver ligado,
+    /// numa **cadencia adaptativa** — o que economiza muito mais bateria do que
+    /// reduzir a leitura para um valor fixo, porque o caro em iOS e acordar a CPU,
+    /// nao o trabalho de cada leitura:
+    ///
+    /// - algo mudou (potencia variou mais de 1 W, mudou o nivel, mudou o estado
+    ///   termico): **5 s**, para nao perder o transiente
+    /// - regime normal: **10 s**
+    /// - tres leituras seguidas praticamente iguais: **30 s**
+    ///
+    /// Numa carga monotona ele passa a maior parte do tempo em 30 s, ou seja,
+    /// ~3% do trabalho que fazia a 1 Hz.
     func beginBackgroundGrace() {
         guard isRunning, let monitor = monitorRef else { return }
         graceTask?.cancel()
         staleWindow = 180
+        KeepAlive.shared.start()
+
         graceTask = Task { @MainActor in
-            let deadline = Date.now.addingTimeInterval(25)
-            while !Task.isCancelled, Date.now < deadline {
+            let graceDeadline = Date.now.addingTimeInterval(25)
+            var lastWatts: Double?
+            var lastPercent: Int?
+            var lastThrottling: Bool?
+            var calmStreak = 0
+
+            while !Task.isCancelled {
                 monitor.refresh()
-                if monitor.snapshot?.externalConnected == false { return }
-                try? await Task.sleep(for: .seconds(2))
+                guard let snap = monitor.snapshot else { return }
+
+                if !snap.externalConnected {
+                    KeepAlive.shared.stop()
+                    endActivity()
+                    return
+                }
+
+                // Sem monitor continuo, so a janela de cortesia do sistema.
+                if !KeepAlive.shared.isActive, Date.now > graceDeadline { return }
+
+                let watts = snap.primaryWatts?.value
+                let throttling = monitor.isThrottling
+                var moved = false
+                if let watts, let lastWatts, abs(watts - lastWatts) > 1.0 { moved = true }
+                if snap.percent != lastPercent { moved = true }
+                if throttling != lastThrottling { moved = true }
+                if let watts, let lastWatts, abs(watts - lastWatts) < 0.3 {
+                    calmStreak += 1
+                } else {
+                    calmStreak = 0
+                }
+                lastWatts = watts
+                lastPercent = snap.percent
+                lastThrottling = throttling
+
+                let interval: Duration
+                if moved {
+                    interval = .seconds(5)
+                    calmStreak = 0
+                } else if calmStreak >= 3 {
+                    interval = .seconds(30)
+                } else {
+                    interval = .seconds(10)
+                }
+                try? await Task.sleep(for: interval)
             }
         }
     }
@@ -115,6 +173,7 @@ final class LiveActivityController {
     func endActivity() {
         graceTask?.cancel()
         graceTask = nil
+        KeepAlive.shared.stop()
         let finishing = activity
         activity = nil
         currentAttributes = nil
@@ -145,9 +204,12 @@ final class LiveActivityController {
             currentAttributes = attributes
             lastState = state
             lastPush = .now
+            KeepAlive.shared.start()
+            lastFailure = nil
         } catch {
             activity = nil
             currentAttributes = nil
+            lastFailure = String(describing: error)
         }
     }
 
@@ -217,6 +279,7 @@ final class LiveActivityController {
             batteryTempC: snap.batteryTemperatureC,
             peakWatts: monitor.peak?.watts,
             throttling: monitor.isThrottling,
+            continuous: KeepAlive.shared.isActive,
             measuredAt: snap.date,
             updateCount: updateCount,
             lastBackgroundWake: lastBackgroundWake,
