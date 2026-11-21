@@ -25,9 +25,10 @@ final class PowerMonitor: ObservableObject {
         var end: Date?
     }
 
-    /// iOS's own thermal verdict; `.serious` and `.critical` mean the system is throttling.
+    /// iOS's own thermal verdict. Apple describes `.serious` as high, with performance possibly
+    /// affected, and `.critical` as significantly reducing performance.
     @Published private(set) var thermalState: ProcessInfo.ThermalState = ProcessInfo.processInfo.thermalState
-    var isThrottling: Bool { thermalState == .serious || thermalState == .critical }
+    var isThermalStateHigh: Bool { thermalState == .serious || thermalState == .critical }
 
     /// Highest charger input power seen since the last reset, persisted across launches.
     @Published private(set) var peak: PeakRecord?
@@ -69,9 +70,17 @@ final class PowerMonitor: ObservableObject {
         let window: TimeInterval
     }
 
-    /// Usable battery energy used to convert %/h into watts.
-    /// iPhone 17 Pro Max: 5088 mAh × ~3.87 V nominal ≈ 19.7 Wh. Adjust for other models.
-    let batteryWattHours: Double = 19.7
+    /// Rated battery energy used to convert %/h into watts, by model identifier. Rated, not
+    /// measured: a worn battery holds less, so the % rate reads high on an older phone.
+    /// iPhone 17 Pro Max: 19.7 Wh (5,088 mAh × 3.87 V; capacity not checked against a source).
+    /// iPhone 18 Pro Max: 21.75 Wh (5,567 mAh eSIM model, iFixit teardown).
+    /// Other models use the 17 Pro Max value.
+    let batteryWattHours: Double = {
+        switch PowerSnapshot.modelIdentifier {
+        case "iPhone19,3", "iPhone19,7": return 21.75
+        default: return 19.7
+        }
+    }()
 
     private let reader = IOKitBattery()
     private let sensors = HIDSensors()
@@ -347,7 +356,8 @@ final class PowerMonitor: ObservableObject {
         }
     }
 
-    /// Tracks 1% transitions and converts the slope into watts.
+    /// Tracks percent transitions and converts the slope into watts. powerd's percent has only
+    /// been seen in 5 % steps on the 18 Pro Max / iOS 27, so one step there is 5 %.
     /// The first logged sample is mid-percent, so at least two transitions are needed.
     private func updateEstimate(_ snap: PowerSnapshot) {
         guard let percent = snap.percent else { estimate = nil; return }
