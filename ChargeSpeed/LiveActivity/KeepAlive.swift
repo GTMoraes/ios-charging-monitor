@@ -1,5 +1,6 @@
 import CoreLocation
 import Foundation
+import UIKit
 
 /// Mantem o app executando enquanto o carregador esta conectado, para a Live
 /// Activity continuar medindo com a tela apagada.
@@ -14,11 +15,15 @@ import Foundation
 ///   de distancia e de 10 km, entao **o GPS nao liga**. O custo fica na ordem de
 ///   manter o processo residente, nao de rastrear posicao.
 /// - Fica ativo **somente enquanto o carregador esta conectado**. Ao desplugar,
-///   desliga junto com a Live Activity. Ou seja: o consumo sai da tomada, nao da
-///   bateria — e a seta de localizacao na barra de status tambem some.
-/// - Basta a permissao **"Ao Usar o App"**. O modo de background declarado no
-///   Info.plist e o que permite continuar durante o carregamento; nao e preciso
-///   pedir "Sempre".
+///   desliga junto com a Live Activity.
+///
+/// **Por que "Sempre".** Com "Ao usar o app", o iOS so deixa continuar em segundo
+/// plano um servico que foi ligado com o app em uso. Quando o atalho (ou o
+/// BGProcessingTask) acorda o app morto, ele ja esta em segundo plano: o pedido
+/// de localizacao nao pega, o app volta a dormir depois de uns segundos e a ilha
+/// congela ate o proximo atalho. Com "Sempre" o servico liga dali mesmo. O GPS
+/// continua desligado; o que muda e que o iOS passa a mostrar, de tempos em
+/// tempos, o aviso de que o app usou a localizacao em segundo plano.
 @MainActor
 final class KeepAlive: NSObject {
 
@@ -26,10 +31,10 @@ final class KeepAlive: NSObject {
 
     private let manager = CLLocationManager()
     private(set) var isActive = false
+    /// Ultimo erro do Core Location, para os atalhos responderem algo util.
+    private(set) var lastError: String?
 
-    /// Nao ha preferencia interna: o interruptor e a propria permissao de
-    /// localizacao do iOS, que e onde a pessoa espera controlar isso.
-    /// Ajustes -> ChargeSpeed -> Localizacao -> Nunca desliga o modo continuo.
+    private static let askedAlwaysKey = "askedAlwaysLocation"
 
     var authorization: CLAuthorizationStatus { manager.authorizationStatus }
     var isAuthorized: Bool {
@@ -39,9 +44,15 @@ final class KeepAlive: NSObject {
     /// Texto curto de status, para as acoes dos Atalhos responderem algo util.
     var statusText: String {
         switch authorization {
-        case .notDetermined: return "abra o app uma vez para autorizar"
-        case .denied, .restricted: return "modo continuo desligado (localizacao negada)"
-        default: return isActive ? "modo continuo ativo" : "modo continuo pronto"
+        case .notDetermined:
+            return "abra o app uma vez para autorizar a localizacao"
+        case .denied, .restricted:
+            return "modo continuo desligado (localizacao negada)"
+        case .authorizedWhenInUse:
+            return "localizacao em 'Ao usar': o modo continuo so religa com o app aberto. Mude para 'Sempre'"
+        default:
+            if let lastError { return "modo continuo com erro de localizacao (\(lastError))" }
+            return isActive ? "modo continuo ativo" : "modo continuo pronto"
         }
     }
 
@@ -55,15 +66,38 @@ final class KeepAlive: NSObject {
         manager.activityType = .other
     }
 
-    /// So funciona com o app em primeiro plano — por isso o fluxo pede para
-    /// abrir o app uma vez depois de ligar o monitor continuo.
+    /// Os pedidos de permissao so aparecem com o app em primeiro plano.
+    /// Primeiro "Ao usar"; com ele concedido, o pedido de "Sempre" (o iOS mostra
+    /// esse segundo pedido uma vez so; depois, so pelos Ajustes).
     func requestAuthorizationIfNeeded() {
-        guard authorization == .notDetermined else { return }
-        manager.requestWhenInUseAuthorization()
+        switch authorization {
+        case .notDetermined:
+            manager.requestWhenInUseAuthorization()
+        case .authorizedWhenInUse:
+            askAlwaysOnce()
+        default:
+            break
+        }
     }
 
+    private func askAlwaysOnce() {
+        guard UIApplication.shared.applicationState == .active,
+              !UserDefaults.standard.bool(forKey: Self.askedAlwaysKey) else { return }
+        UserDefaults.standard.set(true, forKey: Self.askedAlwaysKey)
+        manager.requestAlwaysAuthorization()
+    }
+
+    /// Liga, se ainda nao estiver ligado.
     func start() {
-        guard isAuthorized, !isActive else { return }
+        guard !isActive else { return }
+        restart()
+    }
+
+    /// Liga de novo mesmo que ja conste como ligado. Pedir de novo e barato, e e
+    /// o que conserta o caso em que o pedido anterior foi feito num momento em
+    /// que o iOS nao deixou.
+    func restart() {
+        guard isAuthorized else { return }
         manager.allowsBackgroundLocationUpdates = true
         manager.startUpdatingLocation()
         isActive = true
@@ -80,13 +114,23 @@ final class KeepAlive: NSObject {
 extension KeepAlive: CLLocationManagerDelegate {
     /// As coordenadas sao descartadas de proposito. O interesse e apenas no
     /// efeito colateral de manter o processo vivo.
-    func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {}
+    func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
+        lastError = nil
+    }
 
-    func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {}
+    func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
+        // kCLErrorLocationUnknown e transitorio: o Core Location segue tentando.
+        if let code = (error as? CLError)?.code, code == .locationUnknown { return }
+        lastError = (error as? CLError).map { "codigo \($0.code.rawValue)" } ?? error.localizedDescription
+    }
 
     func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
+        if authorization == .authorizedWhenInUse {
+            // Acabou de conceder "Ao usar", com o app na frente: emenda o pedido de "Sempre".
+            askAlwaysOnce()
+        }
         if isAuthorized, LiveActivityController.shared.isRunning {
-            start()
+            restart()
         } else if !isAuthorized {
             stop()
         }

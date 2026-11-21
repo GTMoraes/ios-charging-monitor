@@ -50,11 +50,20 @@ enum BackgroundRefresh {
         schedule()
 
         let work = Task { @MainActor in
-            let monitor = PowerMonitor()
+            let controller = LiveActivityController.shared
+            controller.adopt()
+            let monitor = controller.reusableMonitor() ?? PowerMonitor()
             monitor.refresh()
-            LiveActivityController.shared.adopt()
-            LiveActivityController.shared.noteBackgroundWake(kind)
-            LiveActivityController.shared.sync(monitor)
+            controller.noteBackgroundWake(kind)
+            controller.sync(monitor)
+            // A atividade sobrevive ao app morto. Se ela ainda esta na tela e o
+            // carregador esta ligado, esta acordada e a chance de voltar a medir:
+            // com localizacao "Sempre" o modo continuo religa daqui mesmo, sem
+            // atalho nenhum.
+            if controller.isRunning, monitor.snapshot?.externalConnected == true {
+                controller.takeOwnership(of: monitor)
+                if !controller.isMeasuring { controller.beginBackgroundGrace() }
+            }
             task.setTaskCompleted(success: true)
         }
         task.expirationHandler = { work.cancel() }

@@ -4,6 +4,11 @@ name: Build unsigned IPA
 # sem assinatura num Release. Quem assina e instala e o AltStore, no iPhone.
 
 on:
+  # Cada push na main gera um .ipa (subida pelo git, como no NFSU2). Mudanca so
+  # em documentacao nao gasta build.
+  push:
+    branches: [main]
+    paths-ignore: ['**/*.md']
   workflow_dispatch:
     inputs:
       battery_wh:
@@ -41,7 +46,7 @@ jobs:
 
       - name: Ajustar project.yml (tirar o time do dono, trocar o bundle id)
         env:
-          BUNDLE_ID: ${{ inputs.bundle_id }}
+          BUNDLE_ID: ${{ inputs.bundle_id || 'com.gtm.chargespeed' }}
         run: |
           set -euo pipefail
           python3 - <<'PY'
@@ -66,7 +71,7 @@ jobs:
 
       - name: Ajustar a capacidade da bateria para o seu modelo
         env:
-          BATTERY_WH: ${{ inputs.battery_wh }}
+          BATTERY_WH: ${{ inputs.battery_wh || '14.3' }}
         run: |
           set -euo pipefail
           python3 - <<'PY'
@@ -79,14 +84,22 @@ jobs:
               sys.exit(f"battery_wh invalido: {wh!r}")
           p = pathlib.Path("ChargeSpeed/PowerMonitor.swift")
           s = p.read_text()
-          s, n = re.subn(r"(let\s+batteryWattHours:\s*Double\s*=\s*)[0-9.]+", r"\g<1>" + wh, s)
+          # Desde a 0.2.0 o upstream escolhe a capacidade pelo modelo (hw.machine) e
+          # cai no valor do 17 Pro Max (19.7) para qualquer modelo que nao conhece,
+          # o que inclui o iPhone 17 base. Troca o valor padrao pelo informado aqui.
+          s, n = re.subn(r"(let\s+batteryWattHours:\s*Double\s*=\s*\{.*?default:\s*return\s*)[0-9.]+",
+                         lambda m: m.group(1) + wh, s, count=1, flags=re.S)
+          if n != 1:
+              # Formato antigo (ate a 0.1.x): valor fixo.
+              s, n = re.subn(r"(let\s+batteryWattHours:\s*Double\s*=\s*)[0-9.]+",
+                             lambda m: m.group(1) + wh, s)
           if n != 1:
               sys.exit("batteryWattHours nao encontrado - o upstream mudou")
           p.write_text(s)
-          print(f"batteryWattHours = {wh}")
+          print(f"batteryWattHours padrao = {wh}")
           PY
 
-      - name: Injetar o gancho da Live Activity no PowerMonitor
+      - name: Injetar o gancho da Live Activity no PowerMonitor (e o cliente HID unico)
         run: |
           set -euo pipefail
           python3 - <<'PY'
@@ -97,8 +110,13 @@ jobs:
           if s.count(anchor) != 1:
               sys.exit("ancoradouro updatePeak(snap) nao encontrado - o upstream mudou")
           s = s.replace(anchor, anchor + "        LiveActivityController.shared.sync(self)\n")
+          # Um cliente HID por processo (ver ChargeSpeed/LiveActivity/SharedSensors.swift).
+          hid = "private let sensors = HIDSensors()"
+          if s.count(hid) != 1:
+              sys.exit("'private let sensors = HIDSensors()' nao encontrado - o upstream mudou")
+          s = s.replace(hid, "private let sensors = HIDSensors.shared")
           p.write_text(s)
-          print("gancho injetado")
+          print("gancho injetado, cliente HID compartilhado")
           PY
 
       - name: Gerar o .xcodeproj
@@ -118,6 +136,19 @@ jobs:
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGNING_ALLOWED=NO \
             build 2>&1 | tee build.log | tail -40
+
+      - name: Mostrar os erros de compilacao
+        if: failure()
+        run: |
+          # O tail acima mostra so o fim do log, onde o erro costuma nao estar.
+          grep -E "error:|fatal error|ld: " build.log | sort -u | head -60 || true
+          {
+            echo "## Erros de compilacao"
+            echo ""
+            echo '```'
+            grep -E "error:|fatal error|ld: " build.log | sort -u | head -60 || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Empacotar o .ipa
         run: |

@@ -32,6 +32,7 @@ targets:
           - processing
           - location
         NSLocationWhenInUseUsageDescription: "O ChargeSpeed nao usa a sua localizacao. A permissao existe apenas porque o iOS nao oferece outro modo de manter o app medindo os sensores de carga com a tela apagada. Nenhuma coordenada e lida, guardada ou enviada, e o servico fica ativo somente enquanto o carregador esta conectado."
+        NSLocationAlwaysAndWhenInUseUsageDescription: "O ChargeSpeed nao usa a sua localizacao. Com 'Sempre', o app consegue voltar a medir a carga sozinho quando o iOS o acorda em segundo plano, sem depender de abrir o app. Nenhuma coordenada e lida, guardada ou enviada, e o servico fica ativo somente enquanto o carregador esta conectado."
         BGTaskSchedulerPermittedIdentifiers:
           - com.gregwilson.chargespeed.refresh
           - com.gregwilson.chargespeed.processing
@@ -61,7 +62,7 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.gregwilson.chargespeed.LiveActivity
-        MARKETING_VERSION: "0.1.0"
+        MARKETING_VERSION: "0.2.1"
         CURRENT_PROJECT_VERSION: 1
         CODE_SIGN_STYLE: Automatic
         DEVELOPMENT_TEAM: MD8FHBP25M

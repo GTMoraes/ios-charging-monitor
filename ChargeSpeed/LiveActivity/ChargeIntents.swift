@@ -53,9 +53,15 @@ struct StopChargeMonitorIntent: LiveActivityIntent {
 @MainActor
 private enum ChargeMonitorStart {
     static func run(detailed: Bool) async throws -> some IntentResult & ProvidesDialog {
-        LiveActivityController.shared.detailedLayout = detailed
+        let controller = LiveActivityController.shared
+        controller.detailedLayout = detailed
+        controller.beginIntent()
+        defer { controller.endIntent() }
+        // Antes da primeira leitura: cada leitura chama sync(), e sem adotar a
+        // atividade que ja esta na tela ele criaria uma segunda.
+        controller.adopt()
 
-        let monitor = PowerMonitor()
+        let monitor = controller.reusableMonitor() ?? PowerMonitor()
 
         // Aquecimento. Nos primeiros segundos depois de plugar a corrente ainda
         // nao subiu: a leitura crua diz 0 W e "em espera". Duas tentativas so
@@ -77,22 +83,24 @@ private enum ChargeMonitorStart {
             return .result(dialog: "O carregador nao esta conectado.")
         }
 
-        LiveActivityController.shared.adopt()
-        LiveActivityController.shared.noteBackgroundWake("atalho")
-        LiveActivityController.shared.sync(monitor)
+        controller.renewIfOld()
+        controller.noteBackgroundWake("atalho")
+        controller.sync(monitor)
 
         // A primeira leitura de um processo recem-acordado costuma vir vazia: os
         // sensores HID ainda nao responderam. Em vez de esperar mais aqui (o
         // intent tem orcamento curto), entrega a atividade e deixa o loop
         // continuo corrigir. `takeOwnership` e o que mantem o monitor vivo
         // depois que este metodo retorna.
-        LiveActivityController.shared.takeOwnership(of: monitor)
-        if !LiveActivityController.shared.isMeasuring {
-            LiveActivityController.shared.beginBackgroundGrace()
+        controller.takeOwnership(of: monitor)
+        if !controller.isMeasuring {
+            controller.beginBackgroundGrace()
+        } else if controller.isRunning {
+            KeepAlive.shared.restart()
         }
         BackgroundRefresh.schedule(after: 60)
 
-        if let failure = LiveActivityController.shared.lastFailure {
+        if let failure = controller.lastFailure {
             return .result(dialog: "Nao consegui criar a Live Activity: \(failure)")
         }
 

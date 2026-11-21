@@ -16,7 +16,8 @@ struct ChargeSpeedApp: App {
                     LiveActivityController.shared.adopt()
                     // O prompt de localizacao so pode aparecer em primeiro plano.
                     // Autorizar liga o modo continuo; negar deixa o app igual ao
-                    // que era, sem medicao com a tela apagada.
+                    // que era, sem medicao com a tela apagada. Depois do "Ao usar"
+                    // vem o pedido de "Sempre" (ver KeepAlive).
                     KeepAlive.shared.requestAuthorizationIfNeeded()
                 }
         }
@@ -31,6 +32,11 @@ struct ChargeSpeedApp: App {
                 LiveActivityController.shared.endBackgroundGrace()
                 LiveActivityController.shared.adopt()
                 KeepAlive.shared.requestAuthorizationIfNeeded()
+                // Com o app em uso o iOS sempre deixa ligar a localizacao, ate com
+                // "Ao usar". Religa aqui para o modo continuo valer quando sair.
+                if LiveActivityController.shared.isRunning {
+                    KeepAlive.shared.restart()
+                }
             default:
                 LiveActivityController.shared.setAppActive(false)
                 LiveActivityController.shared.beginBackgroundGrace()

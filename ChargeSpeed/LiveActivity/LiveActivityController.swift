@@ -70,6 +70,28 @@ final class LiveActivityController {
 
     var isRunning: Bool { activity != nil }
 
+    /// Verdadeiro enquanto um atalho esta rodando. So nesse momento, ou com o app
+    /// aberto, o iOS deixa criar a atividade; fora disso `Activity.request` falha
+    /// com `visibility`, e nao adianta tentar.
+    private var intentRunning = false
+    /// A pessoa dispensou a atividade na tela de bloqueio. Com o app aberto ela
+    /// nao e recriada sozinha; volta quando um atalho pedir ou depois de desplugar.
+    private var userDismissed = false
+    /// O iOS encerra qualquer Live Activity depois de 8 h. Um atalho que rode
+    /// depois de 7 h troca por uma nova antes disso.
+    private static let renewAfter: TimeInterval = 7 * 3600
+
+    func beginIntent() {
+        intentRunning = true
+        userDismissed = false
+        // Falha de um atalho anterior nao vale para este.
+        lastFailure = nil
+    }
+
+    func endIntent() {
+        intentRunning = false
+    }
+
     /// Reassume uma atividade que ja estava rodando (app relancado, ou acordado
     /// em segundo plano num processo novo).
     /// Assume a posse do monitor criado pelo intent, para o loop continuar
@@ -81,6 +103,12 @@ final class LiveActivityController {
         monitorRef = monitor
     }
 
+    /// O monitor que ja esta medindo neste processo, se houver. Atalho e segundo
+    /// plano reaproveitam ele em vez de criar outro: cada PowerMonitor novo abria
+    /// mais um cliente HID, e o upstream documenta que o segundo cliente do mesmo
+    /// processo le NaN.
+    func reusableMonitor() -> PowerMonitor? { ownedMonitor ?? monitorRef }
+
     /// Chamado pelas transicoes de cena do app.
     func setAppActive(_ active: Bool) {
         appIsActive = active
@@ -90,10 +118,53 @@ final class LiveActivityController {
     /// Verdadeiro quando ha um loop de medicao de fundo rodando agora.
     var isMeasuring: Bool { graceTask != nil }
 
+    /// Reassume a atividade que ja esta na tela. Precisa rodar antes de qualquer
+    /// criacao: num processo novo (app morto e acordado pelo atalho) a variavel
+    /// comeca vazia, e sem isto o app criava uma segunda atividade e a antiga
+    /// ficava congelada na tela de bloqueio. Se houver mais de uma, encerra as
+    /// sobras.
     func adopt() {
-        if activity == nil {
-            activity = Activity<ChargeActivityAttributes>.activities.first
-            currentAttributes = activity?.attributes
+        dropIfFinished()
+        guard activity == nil else { return }
+        let alive = Activity<ChargeActivityAttributes>.activities.filter {
+            $0.activityState == .active || $0.activityState == .stale
+        }
+        guard let first = alive.first else { return }
+        activity = first
+        currentAttributes = first.attributes
+        if UserDefaults.standard.object(forKey: Self.startKey(first.id)) == nil {
+            // Atividade criada por uma versao antiga, sem data: conta a partir de agora.
+            UserDefaults.standard.set(Date.now, forKey: Self.startKey(first.id))
+        }
+        for extra in alive.dropFirst() {
+            Task { await extra.end(nil, dismissalPolicy: .immediate) }
+        }
+    }
+
+    /// Troca a atividade por uma nova quando ela passou de 7 h. So funciona
+    /// dentro de um atalho, que e quando o iOS deixa criar.
+    func renewIfOld() {
+        guard intentRunning, let activity,
+              let started = UserDefaults.standard.object(forKey: Self.startKey(activity.id)) as? Date,
+              Date.now.timeIntervalSince(started) > Self.renewAfter else { return }
+        endActivity()
+    }
+
+    private static func startKey(_ id: String) -> String { "activityStart." + id }
+
+    /// O iOS encerra a atividade sozinho depois de 8 h, e a pessoa pode
+    /// dispensar na tela de bloqueio. Nos dois casos a referencia guardada
+    /// continuava apontando para uma atividade morta: as atualizacoes caiam no
+    /// vazio e nada a recriava enquanto o processo vivesse.
+    private func dropIfFinished() {
+        guard let activity else { return }
+        switch activity.activityState {
+        case .ended, .dismissed:
+            if activity.activityState == .dismissed { userDismissed = true }
+            UserDefaults.standard.removeObject(forKey: Self.startKey(activity.id))
+            resetSession()
+        default:
+            break
         }
     }
 
@@ -107,6 +178,7 @@ final class LiveActivityController {
     /// Ponto de entrada unico. Chamado a cada leitura do PowerMonitor.
     func sync(_ monitor: PowerMonitor) {
         monitorRef = monitor
+        dropIfFinished()
         guard let snap = monitor.snapshot else { return }
 
         guard snap.externalConnected else {
@@ -115,13 +187,23 @@ final class LiveActivityController {
             return
         }
         disconnectedStreak = 0
+        if activity == nil { adopt() }
 
         let attributes = makeAttributes(snap)
         let state = makeState(snap, monitor: monitor)
 
-        // Trocou de carregador no meio: a parte estatica mudou, recomeca.
+        // A parte estatica mudou. Pode ser troca de carregador de verdade, ou so
+        // uma leitura do adaptador que veio vazia ou incompleta (acontece logo
+        // depois de o processo acordar, que e justamente quando o atalho roda).
+        // Encerrar aqui com o app em segundo plano mata a atividade sem volta:
+        // recriar fora do primeiro plano falha por `visibility`. Por isso so
+        // recomeca com o app aberto e o adaptador lido de verdade; fora disso a
+        // atividade que existe continua, com o nome antigo do adaptador.
         if let current = currentAttributes, current != attributes {
-            endActivity()
+            let adapterKnown = snap.adapterName != nil || snap.adapterDescription != nil
+            if appIsActive && adapterKnown {
+                endActivity()
+            }
         }
 
         if let activity {
@@ -131,7 +213,7 @@ final class LiveActivityController {
             Task { await activity.update(content) }
             lastPush = .now
             lastState = state
-        } else {
+        } else if intentRunning || (appIsActive && !userDismissed) {
             start(attributes: attributes, state: state)
         }
     }
@@ -157,7 +239,10 @@ final class LiveActivityController {
         guard isRunning, let monitor = monitorRef else { return }
         graceTask?.cancel()
         staleWindow = 180
-        KeepAlive.shared.start()
+        // `restart`, e nao `start`: se o modo continuo foi ligado num momento em
+        // que o iOS nao deixou (localizacao "Ao usar" com o app em segundo
+        // plano), esta e a chance de religar.
+        KeepAlive.shared.restart()
 
         graceTask = Task { @MainActor in
             let graceDeadline = Date.now.addingTimeInterval(25)
@@ -188,7 +273,7 @@ final class LiveActivityController {
                 if !KeepAlive.shared.isActive, Date.now > graceDeadline { return }
 
                 let watts = snap.primaryWatts?.value
-                let throttling = monitor.isThrottling
+                let throttling = monitor.isThermalStateHigh
                 var moved = false
                 if let watts, let lastWatts, abs(watts - lastWatts) > 1.0 { moved = true }
                 if snap.percent != lastPercent { moved = true }
@@ -225,10 +310,24 @@ final class LiveActivityController {
     }
 
     func endActivity() {
+        let finishing = activity
+        let final = lastState
+        resetSession()
+        userDismissed = false
+        guard let finishing else { return }
+        UserDefaults.standard.removeObject(forKey: Self.startKey(finishing.id))
+        Task {
+            let content = final.map { ActivityContent(state: $0, staleDate: nil) }
+            await finishing.end(content, dismissalPolicy: .immediate)
+        }
+    }
+
+    // MARK: - Interno
+
+    private func resetSession() {
         graceTask?.cancel()
         graceTask = nil
         KeepAlive.shared.stop()
-        let finishing = activity
         activity = nil
         currentAttributes = nil
         anchorPercent = nil
@@ -238,16 +337,8 @@ final class LiveActivityController {
         disconnectedStreak = 0
         ownedMonitor = nil
         updateCount = 0
-        let final = lastState
         lastState = nil
-        guard let finishing else { return }
-        Task {
-            let content = final.map { ActivityContent(state: $0, staleDate: nil) }
-            await finishing.end(content, dismissalPolicy: .immediate)
-        }
     }
-
-    // MARK: - Interno
 
     private func start(attributes: ChargeActivityAttributes,
                        state: ChargeActivityAttributes.ContentState) {
@@ -261,6 +352,9 @@ final class LiveActivityController {
             currentAttributes = attributes
             lastState = state
             lastPush = .now
+            if let activity {
+                UserDefaults.standard.set(Date.now, forKey: Self.startKey(activity.id))
+            }
             KeepAlive.shared.start()
             lastFailure = nil
         } catch {
@@ -345,7 +439,7 @@ final class LiveActivityController {
             inputCurrent: snap.usbInputCurrent,
             batteryTempC: snap.batteryTemperatureC,
             peakWatts: monitor.peak?.watts,
-            throttling: monitor.isThrottling,
+            throttling: monitor.isThermalStateHigh,
             continuous: KeepAlive.shared.isActive,
             detailed: detailedLayout,
             measuredAt: snap.date,
